@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Play, Pause, Trash2, Plus, Download, Upload, Users, Settings, FolderOpen, Link, Search, X, FileUp, Clock, HardDrive, Wallet, DollarSign, Check, AlertCircle, Copy } from 'lucide-react';
 import { AddMagnet, AddTorrentFile, GetTorrents, GetStats, PauseTorrent, ResumeTorrent, RemoveTorrent, OpenDownloadFolder, SelectTorrentFile, SelectLocalFiles, GetBalance, SetDepositAddress, GetDepositAddress, CreateTorrentFromFiles } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
@@ -28,24 +28,30 @@ const TorrentClient = () => {
   // Load torrents on mount
   useEffect(() => {
     loadTorrents();
-
-    // Listen for real-time updates
+  
     const unsubscribeUpdate = EventsOn('torrents-update', (data) => {
       try {
         const parsed = JSON.parse(data);
-        setTorrents(parsed.torrents || []);
+        setTorrents(prevTorrents => {
+          const newTorrents = parsed.torrents || [];
+          if (JSON.stringify(prevTorrents) === JSON.stringify(newTorrents)) {
+            return prevTorrents;
+          }
+          return newTorrents;
+        });
+        
         setStats(parsed.stats || stats);
       } catch (e) {
         console.error('Failed to parse update:', e);
       }
     });
-
+  
     const unsubscribeAdded = EventsOn('torrent-added', () => {
       loadTorrents();
       setSuccessMessage('Torrent added successfully!');
       setTimeout(() => setSuccessMessage(''), 3000);
     });
-
+  
     return () => {
       if (unsubscribeUpdate) unsubscribeUpdate();
       if (unsubscribeAdded) unsubscribeAdded();
@@ -247,11 +253,17 @@ const TorrentClient = () => {
     setTimeout(() => setSuccessMessage(''), 2000);
   };
 
-  const filteredTorrents = torrents.filter(t => {
-    const matchesStatus = filterStatus === 'all' || t.status === filterStatus;
-    const matchesSearch = t.name.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesStatus && matchesSearch;
-  });
+  const filteredTorrents = useMemo(() => {
+    return torrents
+      .filter(t => {
+        const matchesStatus = filterStatus === 'all' || t.status === filterStatus;
+        const matchesSearch = t.name.toLowerCase().includes(searchQuery.toLowerCase());
+        return matchesStatus && matchesSearch;
+      })
+      .sort((a, b) => {
+        return a.id.localeCompare(b.id);
+      });
+  }, [torrents, filterStatus, searchQuery]);
 
   const getStatusColor = (status) => {
     switch(status) {
@@ -461,11 +473,12 @@ const TorrentClient = () => {
                 <div
                   key={torrent.id}
                   onClick={() => setSelectedTorrent(torrent)}
-                  className={`bg-[#0E1F2D] rounded-xl p-4 transition-all cursor-pointer border ${
+                  className={`bg-[#0E1F2D] rounded-xl p-4 transition-all cursor-pointer border will-change-auto ${
                     selectedTorrent?.id === torrent.id
                       ? 'ring-2 ring-[#06E7ED] shadow-lg shadow-cyan-500/20 border-[#06E7ED]'
                       : 'border-white/5 hover:border-white/10'
                   }`}
+                  style={{ contain: 'layout' }}
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex-1 min-w-0">

@@ -569,6 +569,14 @@ func (a *App) CreateTorrentFromFiles(files []string) (string, error) {
 		}
 	}
 
+	// Tell the torrent to download all pieces
+	t.Seeding()
+	t.AllowDataUpload()
+	t.AllowDataDownload()
+	t.VerifyData()
+
+	log.Printf("Started verification of existing files")
+
 	// Initialize speed trackers
 	a.speedsMutex.Lock()
 	a.downloadSpeeds[hash] = &speedTracker{lastTime: time.Now()}
@@ -984,23 +992,30 @@ func (a *App) getTorrentStatus(t *torrent.Torrent, stats torrent.TorrentStats, i
 	bytesCompleted := t.BytesCompleted()
 	totalLength := t.Length()
 
-	// Completed
-	if bytesCompleted >= totalLength {
-		// If seeding but no peers → still seeding
-		return "seeding"
+	// Check if download is complete
+	isComplete := bytesCompleted >= totalLength
+
+	if isComplete {
+		// If actively uploading to peers
+		if stats.ActivePeers > 0 {
+			return "seeding"
+		}
+
+		// Completed but no one downloading from us
+		return "completed"
 	}
 
-	// Actively downloading
+	// Still downloading
 	if stats.ActivePeers > 0 {
 		return "downloading"
 	}
 
-	// No download activity but peers discovered
+	// Has potential peers but not connected/downloading
 	if stats.TotalPeers > 0 {
 		return "stalled"
 	}
 
-	// No peers at all - totally stalled
+	// No peers at all - looking for peers
 	return "stalled"
 }
 

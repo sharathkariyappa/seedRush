@@ -275,12 +275,15 @@ func (a *App) AddMagnet(magnetURI string) error {
 		return fmt.Errorf("torrent client not initialized")
 	}
 
+	log.Printf("Adding magnet link...")
 	t, err := a.client.AddMagnet(magnetURI)
 	if err != nil {
+		log.Printf("❌ Failed to add magnet: %v", err)
 		return fmt.Errorf("failed to add magnet: %w", err)
 	}
 
 	hash := t.InfoHash().String()
+	log.Printf("✓ Magnet added with hash: %s", hash)
 
 	// Initialize speed trackers
 	a.speedsMutex.Lock()
@@ -293,19 +296,43 @@ func (a *App) AddMagnet(magnetURI string) error {
 	a.torrents[hash] = t
 	a.torrentsMutex.Unlock()
 
-	log.Printf("Added magnet link, waiting for metadata...")
+	log.Printf("Waiting for metadata...")
+
+	// Emit immediately so UI shows "loading metadata" state
+	wailsruntime.EventsEmit(a.ctx, "torrent-added", hash)
 
 	// Wait for info and start download
 	go func() {
 		select {
 		case <-t.GotInfo():
 			log.Printf("✓ Got metadata for torrent: %s", t.Name())
+			log.Printf("   Size: %s", formatBytes(t.Length()))
+			log.Printf("   Files: %d", len(t.Files()))
+
+			// Start downloading all pieces
 			t.DownloadAll()
+
+			// Allow data transfer
+			t.AllowDataDownload()
+			t.AllowDataUpload()
+
+			log.Printf("✓ Started downloading: %s", t.Name())
+
+			// Save state and notify UI
 			a.saveTorrentStates()
-			wailsruntime.EventsEmit(a.ctx, "torrent-added", hash)
-		case <-time.After(60 * time.Second):
-			log.Printf("⚠ Timeout waiting for torrent metadata")
-			wailsruntime.LogWarning(a.ctx, "Could not fetch torrent metadata within 60 seconds")
+			wailsruntime.EventsEmit(a.ctx, "torrent-updated", hash)
+
+		case <-time.After(120 * time.Second): // Increased timeout to 120s
+			log.Printf("⚠ Timeout waiting for metadata for hash: %s", hash)
+			log.Printf("   This could mean: no peers available, or DHT/tracker issues")
+
+			// Still try to download in case peers appear later
+			t.DownloadAll()
+			t.AllowDataDownload()
+			t.AllowDataUpload()
+
+			wailsruntime.EventsEmit(a.ctx, "torrent-updated", hash)
+			wailsruntime.LogWarning(a.ctx, "Metadata fetch slow - torrent may be rare or have no peers")
 		}
 	}()
 
@@ -352,9 +379,15 @@ func (a *App) AddTorrentFile(filePath string) error {
 
 // CreateTorrentFromFiles creates a torrent from local files and starts seeding
 func (a *App) CreateTorrentFromFiles(files []string) (string, error) {
+	log.Printf("🚀 CreateTorrentFromFiles CALLED with %d files", len(files))
+	log.Printf("   Files: %v", files)
+
 	if a.client == nil {
+		log.Printf("❌ Client is nil!")
 		return "", fmt.Errorf("torrent client not initialized")
 	}
+
+	log.Printf("✓ Client exists, continuing...")
 
 	if len(files) == 0 {
 		return "", fmt.Errorf("no files provided")
@@ -362,57 +395,160 @@ func (a *App) CreateTorrentFromFiles(files []string) (string, error) {
 
 	log.Printf("Creating torrent from %d file(s)...", len(files))
 
-	// Determine if single file or multiple files
 	var rootPath string
+	var isSingleFile bool
+
+	log.Printf("🔍 Checking file count...")
 	if len(files) == 1 {
+		isSingleFile = true
 		rootPath = files[0]
+		log.Printf("✓ Single file mode: %s", rootPath)
 	} else {
-		// For multiple files, use parent directory
-		rootPath = filepath.Dir(files[0])
+		log.Printf("✓ Multiple files mode")
+		parentDir := filepath.Dir(files[0])
+		for _, f := range files[1:] {
+			if filepath.Dir(f) != parentDir {
+				return "", fmt.Errorf("all files must be in the same directory")
+			}
+		}
+		rootPath = parentDir
 	}
 
+	log.Printf("🔍 Root path: %s", rootPath)
+	log.Printf("🔍 Is single file: %v", isSingleFile)
+
+	// For single files, we need to create a directory structure
+	var torrentRootPath string
+	if isSingleFile {
+		log.Printf("🔍 Processing single file...")
+
+		// Create a directory with the file's name (without extension)
+		fileName := filepath.Base(rootPath)
+		log.Printf("🔍 File name: %s", fileName)
+
+		dirName := fileName
+		log.Printf("🔍 Dir name: %s", dirName)
+
+		torrentDir := filepath.Join(a.downloadDir, dirName)
+		log.Printf("🔍 Torrent dir: %s", torrentDir)
+
+		// Create directory if it doesn't exist
+		log.Printf("🔍 Creating directory...")
+		if err := os.MkdirAll(torrentDir, 0755); err != nil {
+			log.Printf("❌ Failed to create directory: %v", err)
+			return "", fmt.Errorf("failed to create torrent directory: %w", err)
+		}
+		log.Printf("✓ Directory created")
+
+		destPath := filepath.Join(torrentDir, fileName)
+		log.Printf("🔍 Dest path: %s", destPath)
+
+		// Check if we need to copy the file
+		if rootPath != destPath {
+			log.Printf("🔍 Need to copy file from %s to %s", rootPath, destPath)
+			log.Printf("Copying file to torrent structure: %s", destPath)
+
+			// Remove existing file if present
+			log.Printf("🔍 Removing existing file if present...")
+			os.Remove(destPath)
+
+			log.Printf("🔍 Starting file copy...")
+			if err := copyFile(rootPath, destPath); err != nil {
+				log.Printf("❌ Failed to copy file: %v", err)
+				return "", fmt.Errorf("failed to copy file: %w", err)
+			}
+
+			log.Printf("✓ File prepared at: %s", destPath)
+		}
+
+		torrentRootPath = torrentDir
+		log.Printf("🔍 Torrent root path set to: %s", torrentRootPath)
+	} else {
+		// For multiple files, just use the directory
+		torrentRootPath = rootPath
+	}
+
+	log.Printf("Building torrent from path: %s", torrentRootPath)
+
 	// Build metainfo
+	log.Printf("🔍 Creating metainfo...")
 	info := metainfo.Info{
 		PieceLength: 256 * 1024, // 256 KB pieces
 	}
 
 	// Build from file path
-	if err := info.BuildFromFilePath(rootPath); err != nil {
+	log.Printf("🔍 Building from file path...")
+	if err := info.BuildFromFilePath(torrentRootPath); err != nil {
+		log.Printf("❌ Failed to build from file path: %v", err)
 		return "", fmt.Errorf("failed to build torrent info: %w", err)
 	}
+	log.Printf("✓ Built from file path")
 
 	log.Printf("Generating pieces for torrent...")
 
 	// Generate pieces (hash the data)
 	err := info.GeneratePieces(func(fi metainfo.FileInfo) (io.ReadCloser, error) {
-		fullPath := filepath.Join(rootPath, filepath.Join(fi.Path...))
+		fullPath := filepath.Join(torrentRootPath, filepath.Join(fi.Path...))
 		return os.Open(fullPath)
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to generate pieces: %w", err)
 	}
 
-	log.Printf("Torrent info generated, size: %d bytes", info.TotalLength())
+	log.Printf("✓ Torrent info generated, size: %d bytes", info.TotalLength())
 
 	// Create metainfo with trackers
 	mi := metainfo.MetaInfo{
 		AnnounceList: [][]string{
 			{"udp://tracker.openbittorrent.com:6969/announce"},
 			{"udp://tracker.opentrackr.org:1337/announce"},
-			{"udp://tracker.pomf.se:80/announce"},
+			{"udp://open.stealth.si:80/announce"},
+			{"udp://tracker.torrent.eu.org:451/announce"},
+			{"udp://explodie.org:6969/announce"},
 		},
 		InfoBytes: bencode.MustMarshal(info),
 	}
 	mi.SetDefaults()
 
-	// Add torrent to client for seeding
+	// Generate magnet link
+	magnet, err := mi.MagnetV2()
+	if err != nil {
+		return "", fmt.Errorf("failed to generate magnet link: %w", err)
+	}
+	magnetStr := magnet.String()
+
+	// Add torrent to client
 	t, err := a.client.AddTorrent(&mi)
 	if err != nil {
 		return "", fmt.Errorf("failed to add torrent for seeding: %w", err)
 	}
 
 	hash := t.InfoHash().String()
-	log.Printf("Added torrent with hash: %s", hash)
+	log.Printf("✓ Added torrent with hash: %s", hash)
+
+	// Wait for info
+	<-t.GotInfo()
+	log.Printf("✓ Got torrent info: %s", t.Name())
+
+	// DEBUG: Log expected file paths
+	for _, file := range t.Files() {
+		expectedPath := filepath.Join(a.downloadDir, file.Path())
+		log.Printf("🔍 Torrent expects file at: %s", expectedPath)
+
+		if _, err := os.Stat(expectedPath); err != nil {
+			log.Printf("❌ File NOT found: %s", err)
+		} else {
+			log.Printf("✓ File exists at expected location")
+		}
+	}
+
+	// Tell the torrent to download all pieces
+	t.DownloadAll()
+	t.AllowDataUpload()
+	t.AllowDataDownload()
+	t.VerifyData()
+
+	log.Printf("Started verification of existing files")
 
 	// Initialize speed trackers
 	a.speedsMutex.Lock()
@@ -425,48 +561,82 @@ func (a *App) CreateTorrentFromFiles(files []string) (string, error) {
 	a.torrents[hash] = t
 	a.torrentsMutex.Unlock()
 
-	// Wait for info and verify existing files
-	<-t.GotInfo()
-	log.Printf("Got torrent info: %s", t.Name())
-
-	// Download all pieces (this verifies existing data)
-	t.Seeding()
-	log.Printf("Started verification of existing files...")
-
-	// Wait for verification to complete
+	// Wait for verification in background
 	go func() {
-		// Give it time to verify the files
-		for i := 0; i < 30; i++ {
-			time.Sleep(500 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 
-			// Check if verification is complete
-			if t.BytesCompleted() >= t.Length() {
-				log.Printf("✓ File verification complete: %d/%d bytes", t.BytesCompleted(), t.Length())
-				break
-			}
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
 
-			if i == 29 {
-				log.Printf("⚠ Verification taking longer than expected: %d/%d bytes verified", t.BytesCompleted(), t.Length())
+		timeout := time.After(60 * time.Second)
+		lastCompleted := int64(0)
+
+		for {
+			select {
+			case <-ticker.C:
+				completed := t.BytesCompleted()
+				total := t.Length()
+
+				if completed != lastCompleted {
+					percentage := float64(completed) / float64(total) * 100
+					log.Printf("⏳ Verifying: %.1f%% (%d/%d bytes)", percentage, completed, total)
+					lastCompleted = completed
+				}
+
+				if completed >= total {
+					log.Printf("✓ File verification complete: 100%%")
+					log.Printf("✓ Now seeding torrent: %s", t.Name())
+					wailsruntime.EventsEmit(a.ctx, "torrent-added", hash)
+					a.saveTorrentStates()
+					return
+				}
+
+			case <-timeout:
+				completed := t.BytesCompleted()
+				total := t.Length()
+				percentage := float64(completed) / float64(total) * 100
+
+				if completed == 0 {
+					log.Printf("❌ Verification failed: 0%% complete")
+				} else if completed < total {
+					log.Printf("⚠ Verification incomplete: %.1f%% (%d/%d bytes)", percentage, completed, total)
+				} else {
+					log.Printf("✓ Verification complete: 100%%")
+				}
+
+				wailsruntime.EventsEmit(a.ctx, "torrent-added", hash)
+				a.saveTorrentStates()
+				return
 			}
 		}
-
-		wailsruntime.EventsEmit(a.ctx, "torrent-added", hash)
 	}()
 
-	a.saveTorrentStates()
-
-	// Get magnet link
-	magnet, err := mi.MagnetV2()
-	if err != nil {
-		log.Printf("Warning: failed to generate magnet link: %v", err)
-		return "", fmt.Errorf("failed to generate magnet link: %w", err)
-	}
-
-	magnetStr := magnet.String()
-	log.Printf("✓ Created and seeding torrent: %s", t.Name())
+	log.Printf("✓ Created torrent: %s", t.Name())
 	log.Printf("✓ Magnet link: %s", magnetStr)
 
 	return magnetStr, nil
+}
+
+// Helper function to copy file
+func copyFile(src, dst string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	destFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	_, err = io.Copy(destFile, sourceFile)
+	if err != nil {
+		return err
+	}
+
+	return destFile.Sync()
 }
 
 // GetTorrents returns all torrents
@@ -815,44 +985,36 @@ func (a *App) getTorrentInfo(hash string, t *torrent.Torrent) TorrentInfo {
 }
 
 func (a *App) getTorrentStatus(t *torrent.Torrent, stats torrent.TorrentStats, isPaused bool) string {
-	// First check if manually paused
 	if isPaused {
 		return "paused"
 	}
 
-	// Check if we have valid length info
-	if t.Length() == 0 {
+	// Metadata not fetched yet
+	if t.Info() == nil || t.Length() == 0 {
 		return "loading"
 	}
 
-	// Check if download is complete (with small margin for rounding)
 	bytesCompleted := t.BytesCompleted()
 	totalLength := t.Length()
 
+	// Completed
 	if bytesCompleted >= totalLength {
-		// Download is complete - we're seeding
+		// If seeding but no peers → still seeding
 		return "seeding"
 	}
 
-	// Still downloading
-	progress := float64(bytesCompleted) / float64(totalLength)
-
-	// If we have active download activity, we're downloading
-	if stats.ActivePeers > 0 && progress < 1.0 {
+	// Actively downloading
+	if stats.ActivePeers > 0 {
 		return "downloading"
 	}
 
-	// No active peers but we have discovered peers - stalled
-	if stats.TotalPeers > 0 && progress < 1.0 {
+	// No download activity but peers discovered
+	if stats.TotalPeers > 0 {
 		return "stalled"
 	}
 
-	// No peers at all and not complete - waiting for peers
-	if progress < 1.0 {
-		return "stalled"
-	}
-
-	return "seeding"
+	// No peers at all - totally stalled
+	return "stalled"
 }
 
 func (a *App) updateStatsLoop() {

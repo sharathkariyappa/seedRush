@@ -55,6 +55,7 @@ const TorrentClient = () => {
   const loadTorrents = async () => {
     try {
       const result = await GetTorrents();
+      console.log('Loaded torrents:', result);
       setTorrents(result || []);
       const statsResult = await GetStats();
       setStats(statsResult);

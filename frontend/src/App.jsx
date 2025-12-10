@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Pause, Trash2, Plus, Download, Upload, Users, Settings, FolderOpen, Link, Search, X, FileUp, Clock, HardDrive, Wallet, DollarSign, Check, AlertCircle, Copy } from 'lucide-react';
-import { AddMagnet, AddTorrentFile, GetTorrents, GetStats, PauseTorrent, ResumeTorrent, RemoveTorrent, OpenDownloadFolder, SelectTorrentFile, SelectLocalFiles, GetBalance, SetDepositAddress, GetDepositAddress } from '../wailsjs/go/main/App';
+import { AddMagnet, AddTorrentFile, GetTorrents, GetStats, PauseTorrent, ResumeTorrent, RemoveTorrent, OpenDownloadFolder, SelectTorrentFile, SelectLocalFiles, GetBalance, SetDepositAddress, GetDepositAddress, CreateTorrentFromFiles } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 
 const TorrentClient = () => {
@@ -13,9 +13,6 @@ const TorrentClient = () => {
   });
   const [selectedTorrent, setSelectedTorrent] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [showDepositModal, setShowDepositModal] = useState(false);
-  const [showBalanceModal, setShowBalanceModal] = useState(false);
   const [showLocalFilesModal, setShowLocalFilesModal] = useState(false);
   const [magnetLink, setMagnetLink] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -23,16 +20,14 @@ const TorrentClient = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
-  const [paymentAmount, setPaymentAmount] = useState('');
   const [walletBalance, setWalletBalance] = useState('0.00000000');
   const [selectedLocalFiles, setSelectedLocalFiles] = useState([]);
-  const [localFilePrice, setLocalFilePrice] = useState('');
-  const [pendingTorrent, setPendingTorrent] = useState(null);
+  const [generatedMagnetLink, setGeneratedMagnetLink] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState(null);
 
   // Load torrents on mount
   useEffect(() => {
     loadTorrents();
-    loadDepositAddress();
 
     // Listen for real-time updates
     const unsubscribeUpdate = EventsOn('torrents-update', (data) => {
@@ -51,7 +46,6 @@ const TorrentClient = () => {
       setTimeout(() => setSuccessMessage(''), 3000);
     });
 
-    // Cleanup event listeners
     return () => {
       if (unsubscribeUpdate) unsubscribeUpdate();
       if (unsubscribeAdded) unsubscribeAdded();
@@ -69,20 +63,11 @@ const TorrentClient = () => {
     }
   };
 
-  const loadDepositAddress = async () => {
-    try {
-      const address = await GetDepositAddress();
-      setCurrentDepositAddress(address || '');
-    } catch (err) {
-      console.error('Failed to load deposit address:', err);
-    }
-  };
-
   const handleViewBalance = async () => {
     try {
       const balance = await GetBalance();
       setWalletBalance(balance);
-      setShowBalanceModal(true);
+      alert(`Your wallet balance: ${balance} BSV`);
     } catch (err) {
       setError('Failed to retrieve wallet balance');
       setTimeout(() => setError(''), 3000);
@@ -117,7 +102,6 @@ const TorrentClient = () => {
   };
 
   const handleAddTorrentFile = async () => {
-    
     setLoading(true);
     setError('');
 
@@ -137,7 +121,6 @@ const TorrentClient = () => {
   };
 
   const handleSelectLocalFiles = async () => {
-
     try {
       const files = await SelectLocalFiles();
       if (files && files.length > 0) {
@@ -150,71 +133,50 @@ const TorrentClient = () => {
     }
   };
 
-  const handleShareLocalFiles = async () => {
-    if (!localFilePrice || parseFloat(localFilePrice) < 0) {
-      setError('Please enter a valid price (0 for free)');
+  const handleCreateTorrent = async () => {
+    if (selectedLocalFiles.length === 0) {
+      setError('No files selected');
       return;
     }
 
     setLoading(true);
+    setError('');
+
     try {
-      // Here you would create a torrent from local files and add it
-      // For now, we'll simulate the process
-      setSuccessMessage('Creating torrent from local files...');
-      setShowLocalFilesModal(false);
-      setSelectedLocalFiles([]);
-      setLocalFilePrice('');
+      const magnetLink = await CreateTorrentFromFiles(selectedLocalFiles);
+      setGeneratedMagnetLink(magnetLink);
+      setSuccessMessage('Torrent created and seeding!');
+      
+      // Load torrents to show the new one
+      await loadTorrents();
+      
       setTimeout(() => {
-        setSuccessMessage('Files shared successfully!');
-        setTimeout(() => setSuccessMessage(''), 3000);
-      }, 2000);
+        setSuccessMessage('');
+      }, 5000);
     } catch (err) {
-      setError('Failed to share local files');
+      setError(err.message || 'Failed to create torrent');
       setTimeout(() => setError(''), 3000);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDownloadTorrent = (torrent) => {
-    // Check if torrent requires payment
-    if (torrent.price && parseFloat(torrent.price) > 0) {
-      setPendingTorrent(torrent);
-      setPaymentAmount(torrent.price);
-      setShowPaymentModal(true);
-    } else {
-      // Free torrent, start download immediately
-      handleToggleStatus(torrent);
-    }
-  };
-
-  const handleConfirmPayment = () => {
-    if (!paymentAmount || parseFloat(paymentAmount) <= 0) {
-      setError('Please enter a valid payment amount');
-      return;
-    }
-
-    // Redirect to BSV wallet with payment details
-    const paymentUrl = `bsv://pay?address=${pendingTorrent.seederAddress}&amount=${paymentAmount}&label=Torrent:${encodeURIComponent(pendingTorrent.name)}`;
-    
-    setSuccessMessage('Redirecting to BSV wallet...');
-    window.location.href = paymentUrl;
-    
-    // Close modal after redirect
-    setTimeout(() => {
-      setShowPaymentModal(false);
-      setPendingTorrent(null);
-      setPaymentAmount('');
-    }, 1000);
+  const handleCloseLocalFilesModal = () => {
+    setShowLocalFilesModal(false);
+    setSelectedLocalFiles([]);
+    setGeneratedMagnetLink('');
   };
 
   const handleToggleStatus = async (torrent) => {
     try {
-      if (torrent.status === 'paused' || torrent.status === 'stalled') {
+      if (torrent.status === 'paused' || torrent.status === 'stalled' || torrent.isPaused) {
         await ResumeTorrent(torrent.infoHash);
+        setSuccessMessage(`Resumed: ${torrent.name}`);
       } else {
         await PauseTorrent(torrent.infoHash);
+        setSuccessMessage(`Paused: ${torrent.name}`);
       }
+      setTimeout(() => setSuccessMessage(''), 2000);
       await loadTorrents();
     } catch (err) {
       console.error('Failed to toggle torrent:', err);
@@ -223,25 +185,48 @@ const TorrentClient = () => {
     }
   };
 
-  const handleRemoveTorrent = async (torrent, deleteFiles = false) => {
-    const message = deleteFiles 
-      ? `Remove "${torrent.name}" and delete downloaded files?`
-      : `Remove "${torrent.name}"?`;
+  const handleRemoveTorrent = (torrent, deleteFiles = false) => {
+    console.log('🔍 handleRemoveTorrent called:', { 
+      name: torrent.name, 
+      infoHash: torrent.infoHash, 
+      deleteFiles 
+    });
+    
+    setConfirmDialog({
+      torrent,
+      deleteFiles,
+      message: deleteFiles 
+        ? `Remove "${torrent.name}" and delete downloaded files?`
+        : `Remove "${torrent.name}"?`
+    });
+  };
+  
+  const confirmRemoval = async () => {
+    const { torrent, deleteFiles } = confirmDialog;
+    setConfirmDialog(null);
+    
+    try {
+      console.log('✓ Starting removal');
       
-    if (window.confirm(message)) {
-      try {
-        await RemoveTorrent(torrent.infoHash, deleteFiles);
-        if (selectedTorrent?.infoHash === torrent.infoHash) {
-          setSelectedTorrent(null);
-        }
-        await loadTorrents();
-        setSuccessMessage(deleteFiles ? 'Torrent and files removed' : 'Torrent removed');
-        setTimeout(() => setSuccessMessage(''), 3000);
-      } catch (err) {
-        console.error('Failed to remove torrent:', err);
-        setError('Failed to remove torrent');
-        setTimeout(() => setError(''), 3000);
+      if (selectedTorrent?.infoHash === torrent.infoHash) {
+        setSelectedTorrent(null);
+        console.log('✓ Closed details panel');
       }
+      
+      console.log('📡 Calling RemoveTorrent...');
+      await RemoveTorrent(torrent.infoHash, deleteFiles);
+      console.log('✓ RemoveTorrent completed');
+      
+      console.log('🔄 Loading torrents...');
+      await loadTorrents();
+      console.log('✓ Torrents reloaded');
+      
+      setSuccessMessage(deleteFiles ? 'Torrent and files removed' : 'Torrent removed');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      console.error('❌ Failed to remove torrent:', err);
+      setError(err.message || 'Failed to remove torrent');
+      setTimeout(() => setError(''), 3000);
     }
   };
 
@@ -279,8 +264,29 @@ const TorrentClient = () => {
         return 'bg-yellow-500/20 text-yellow-300';
       case 'paused':
         return 'bg-gray-500/20 text-gray-300';
+      case 'loading':
+        return 'bg-purple-500/20 text-purple-300';
       default:
         return 'bg-gray-500/20 text-gray-300';
+    }
+  };
+
+  const getStatusDisplay = (status) => {
+    switch(status) {
+      case 'downloading':
+        return 'Downloading';
+      case 'seeding':
+        return 'Seeding';
+      case 'completed':
+        return 'Completed';
+      case 'stalled':
+        return 'Stalled';
+      case 'paused':
+        return 'Paused';
+      case 'loading':
+        return 'Loading...';
+      default:
+        return status;
     }
   };
 
@@ -302,11 +308,11 @@ const TorrentClient = () => {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-[#06E7ED]/10 flex items-center justify-center">
-              <img src="/Frame 1194.svg" alt="Logo" className="w-10 h-10" />
+              <img src="/loogo.png" alt="SeedRush Logo" className="w-10 h-10 rounded-md" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-white">Btorrent</h1>
-              <p className="text-xs text-gray-400">Modern Torrent Client</p>
+              <h1 className="text-xl font-bold text-white">SeedRush</h1>
+              <p className="text-xs text-gray-400">Earn while you seed</p>
             </div>
           </div>
 
@@ -340,8 +346,7 @@ const TorrentClient = () => {
               <FolderOpen className="w-5 h-5" />
             </button>
 
-            <button 
-            >
+            <button className="p-2 hover:bg-white/10 rounded-lg transition-all">
               <Settings className="w-5 h-5" />
             </button>
           </div>
@@ -463,15 +468,7 @@ const TorrentClient = () => {
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-semibold text-white truncate">{torrent.name}</h3>
-                        {torrent.price && parseFloat(torrent.price) > 0 && (
-                          <span className="px-2 py-0.5 bg-green-500/20 text-green-300 rounded text-xs font-medium flex items-center gap-1">
-                            <DollarSign className="w-3 h-3" />
-                            {torrent.price} BSV
-                          </span>
-                        )}
-                      </div>
+                      <h3 className="font-semibold text-white truncate mb-1">{torrent.name}</h3>
                       <div className="flex items-center gap-3 mt-1 text-xs text-gray-400">
                         <span className="flex items-center gap-1">
                           <HardDrive className="w-3 h-3" />
@@ -493,7 +490,7 @@ const TorrentClient = () => {
                         )}
                         <span>•</span>
                         <span className={`px-2 py-0.5 rounded ${getStatusColor(torrent.status)}`}>
-                          {torrent.status}
+                          {getStatusDisplay(torrent.status)}
                         </span>
                       </div>
                     </div>
@@ -501,12 +498,12 @@ const TorrentClient = () => {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleDownloadTorrent(torrent);
+                          handleToggleStatus(torrent);
                         }}
                         className="p-2 hover:bg-white/10 rounded-lg transition-all"
-                        title={torrent.status === 'paused' || torrent.status === 'stalled' ? 'Resume' : 'Pause'}
+                        title={torrent.isPaused || torrent.status === 'paused' ? 'Resume' : 'Pause'}
                       >
-                        {torrent.status === 'paused' || torrent.status === 'stalled' ? (
+                        {torrent.isPaused || torrent.status === 'paused' || torrent.status === 'stalled' ? (
                           <Play className="w-4 h-4 text-[#06E7ED]" />
                         ) : (
                           <Pause className="w-4 h-4 text-orange-400" />
@@ -566,18 +563,6 @@ const TorrentClient = () => {
             </div>
 
             <div className="space-y-6">
-              {selectedTorrent.price && parseFloat(selectedTorrent.price) > 0 && (
-                <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <DollarSign className="w-5 h-5 text-green-400" />
-                    <span className="font-semibold text-green-300">Paid Content</span>
-                  </div>
-                  <p className="text-sm text-gray-300">
-                    Price: <span className="font-bold text-green-400">{selectedTorrent.price} BSV</span>
-                  </p>
-                </div>
-              )}
-
               <div>
                 <h3 className="text-sm font-semibold text-gray-400 mb-3">FILES</h3>
                 <div className="space-y-2">
@@ -619,7 +604,7 @@ const TorrentClient = () => {
                   <div className="flex justify-between">
                     <span className="text-gray-400">Status</span>
                     <span className={`font-medium capitalize px-2 py-0.5 rounded text-xs ${getStatusColor(selectedTorrent.status)}`}>
-                      {selectedTorrent.status}
+                      {getStatusDisplay(selectedTorrent.status)}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -702,7 +687,7 @@ const TorrentClient = () => {
 
             {error && (
               <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm flex items-start gap-2">
-                <X className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                 <span>{error}</span>
               </div>
             )}
@@ -726,36 +711,200 @@ const TorrentClient = () => {
                     }}
                     className="w-full bg-[#0E1F2D] border border-white/5 rounded-lg pl-10 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#06E7ED] focus:border-transparent transition-all"
                     disabled={loading}
-                  />
+                    />
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      Press Enter to add
+                      </p>
+                    </div>
+                    <div className="flex gap-3">
+            <button
+              onClick={handleAddMagnet}
+              disabled={loading || !magnetLink.trim()}
+              className="flex-1 bg-[#06E7ED] hover:bg-[#05CDD3] text-[#081B2A] rounded-lg py-3 font-semibold transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? 'Adding...' : 'Add Magnet'}
+            </button>
+            <button
+              onClick={handleAddTorrentFile}
+              disabled={loading}
+              className="px-6 bg-[#0E1F2D] hover:bg-white/5 border border-white/10 rounded-lg font-medium transition-all flex items-center gap-2 disabled:opacity-50"
+            >
+              <FileUp className="w-4 h-4" />
+              File
+            </button>
+          </div>
+        </div>
+      </div>
+        </div>
+      )}
+
+      {/* Share Local Files Modal */}
+      {showLocalFilesModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-[#0C2437] rounded-2xl p-6 w-full max-w-2xl shadow-2xl border border-white/10">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold">Share Local Files</h2>
+              <button
+                onClick={handleCloseLocalFilesModal}
+                className="p-2 hover:bg-white/10 rounded-lg transition-all"
+                disabled={loading}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {error && (
+              <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-400 mb-3">SELECTED FILES</h3>
+                <div className="bg-[#0E1F2D] rounded-lg p-4 border border-white/5 max-h-60 overflow-y-auto">
+                  {selectedLocalFiles.map((file, idx) => (
+                    <div key={idx} className="flex items-center gap-2 py-2 border-b border-white/5 last:border-0">
+                      <HardDrive className="w-4 h-4 text-[#06E7ED] flex-shrink-0" />
+                      <span className="text-sm text-gray-300 truncate flex-1" title={file}>
+                        {file.split('/').pop() || file.split('\\').pop()}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-                <p className="text-xs text-gray-500 mt-2">
-                  Press Enter to add
-                </p>
               </div>
 
+              {loading && (
+                <div className="bg-[#06E7ED]/10 border border-[#06E7ED]/20 rounded-lg p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-[#06E7ED] border-t-transparent"></div>
+                    <span className="text-sm font-medium text-[#06E7ED]">Creating torrent and generating magnet link...</span>
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    This may take a few moments depending on file size.
+                  </p>
+                </div>
+              )}
+
+              {generatedMagnetLink && (
+                <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Check className="w-5 h-5 text-green-400" />
+                    <span className="font-semibold text-green-300">Torrent Created Successfully!</span>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm text-gray-300">Your files are now being seeded. Share this magnet link:</p>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={generatedMagnetLink}
+                        readOnly
+                        className="flex-1 bg-[#0E1F2D] border border-white/5 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none"
+                      />
+                      <button
+                        onClick={() => copyToClipboard(generatedMagnetLink)}
+                        className="px-4 py-2 bg-[#06E7ED] hover:bg-[#05CDD3] text-[#081B2A] rounded-lg transition-all flex items-center gap-2 text-sm font-medium"
+                      >
+                        <Copy className="w-4 h-4" />
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="flex gap-3">
-                <button
-                  onClick={handleAddMagnet}
-                  disabled={loading || !magnetLink.trim()}
-                  className="flex-1 bg-[#06E7ED] hover:bg-[#05CDD3] text-[#081B2A] rounded-lg py-3 font-semibold transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? 'Adding...' : 'Add Magnet'}
-                </button>
-                <button
-                  onClick={handleAddTorrentFile}
-                  disabled={loading}
-                  className="px-6 bg-[#0E1F2D] hover:bg-white/5 border border-white/10 rounded-lg font-medium transition-all flex items-center gap-2 disabled:opacity-50"
-                >
-                  <FileUp className="w-4 h-4" />
-                  File
-                </button>
+                {!generatedMagnetLink ? (
+                  <>
+                    <button
+                      onClick={handleCreateTorrent}
+                      disabled={loading || selectedLocalFiles.length === 0}
+                      className="flex-1 bg-[#06E7ED] hover:bg-[#05CDD3] text-[#081B2A] rounded-lg py-3 font-semibold transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {loading ? (
+                        <>
+                          <div className="animate-spin rounded-full h-5 w-5 border-2 border-[#081B2A] border-t-transparent"></div>
+                          Creating...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-5 h-5" />
+                          Create & Share Torrent
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={handleCloseLocalFilesModal}
+                      disabled={loading}
+                      className="px-6 bg-[#0E1F2D] hover:bg-white/5 border border-white/10 rounded-lg font-medium transition-all disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={handleCloseLocalFilesModal}
+                    className="flex-1 bg-[#06E7ED] hover:bg-[#05CDD3] text-[#081B2A] rounded-lg py-3 font-semibold transition-all"
+                  >
+                    Done
+                  </button>
+                )}
               </div>
             </div>
           </div>
         </div>
       )}
-    </div>
-  );
-};
 
+      {/* Confirmation Modal */}
+      {confirmDialog && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-[#0C2437] rounded-2xl p-6 w-full max-w-lg shadow-2xl border border-white/10">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold">Confirm Removal</h2>
+              <button
+                onClick={() => setConfirmDialog(null)}
+                className="p-2 hover:bg-white/10 rounded-lg transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="mb-6">
+              <div className="flex items-start gap-3 p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
+                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-gray-200 font-medium mb-1">
+                    {confirmDialog.message}
+                  </p>
+                  {confirmDialog.deleteFiles && (
+                    <p className="text-sm text-gray-400">
+                      This will permanently delete all downloaded files.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmDialog(null)}
+                className="flex-1 bg-[#0E1F2D] hover:bg-white/5 border border-white/10 rounded-lg py-3 font-semibold transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmRemoval}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white rounded-lg py-3 font-semibold transition-all shadow-lg shadow-red-500/20"
+              >
+                {confirmDialog.deleteFiles ? 'Remove & Delete Files' : 'Remove Torrent'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+
+);};
 export default TorrentClient;

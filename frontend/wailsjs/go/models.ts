@@ -56,6 +56,7 @@ export namespace main {
 	    files: FileInfo[];
 	    // Go type: time
 	    addedAt: any;
+	    isPaused: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new TorrentInfo(source);
@@ -79,6 +80,7 @@ export namespace main {
 	        this.eta = source["eta"];
 	        this.files = this.convertValues(source["files"], FileInfo);
 	        this.addedAt = this.convertValues(source["addedAt"], null);
+	        this.isPaused = source["isPaused"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

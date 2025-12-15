@@ -33,8 +33,8 @@ func NewApp() *App {
 }
 
 func (a *App) startup(ctx context.Context) {
-	a.appStateLocker.Lock()
-	defer a.appStateLocker.Unlock()
+	// a.appStateLocker.Lock()
+	// defer a.appStateLocker.Unlock()
 
 	a.ctx = ctx
 
@@ -171,7 +171,7 @@ func (a *App) startup(ctx context.Context) {
 								})
 
 								a.wallet.WalletUtxos = []UTXO{
-									{0, (totalInputAmount - totalSpentAmount), microTransaction.TxID().String()},
+									{1, (totalInputAmount - totalSpentAmount), microTransaction.TxID().String()},
 								}
 							}
 

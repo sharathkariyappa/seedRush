@@ -319,15 +319,16 @@ const TorrentClient = () => {
       {/* Top Bar */}
       <div className="bg-[#0E1F2D] px-6 py-4 border-b border-white/5">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-[#06E7ED]/10 flex items-center justify-center">
-              <img src="/loogo.png" alt="SeedRush Logo" className="w-10 h-10 rounded-md" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-white">SeedRush</h1>
-              <p className="text-xs text-gray-400">Earn while you seed</p>
-            </div>
-          </div>
+        <div className="flex flex-col gap-1">
+          <img
+            src="/Full_logo_Dark.svg"
+            alt="SeedRush Logo"
+            className="w-28 h-auto"
+          />
+          <p className="text-xs text-gray-400">
+            Earn while you seed
+          </p>
+        </div>
 
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-4 px-4 py-2 bg-[#081B2A]/50 rounded-lg border border-white/5">
@@ -335,7 +336,7 @@ const TorrentClient = () => {
                 <Download className="w-4 h-4 text-[#06E7ED]" />
                 <span className="text-sm font-medium">{stats.totalDownload}</span>
               </div>
-              <div className="w-px h-4 bg-white/10"></div>
+              <div className="w-px h-4 bg-white/10"></div>w
               <div className="flex items-center gap-2">
                 <Upload className="w-4 h-4 text-[#06E7ED]" />
                 <span className="text-sm font-medium">{stats.totalUpload}</span>

@@ -4,14 +4,6 @@ import {main} from '../models';
 
 export function AddMagnet(arg1:string):Promise<void>;
 
-export function AddTorrentFile(arg1:string):Promise<void>;
-
-export function CreateTorrentFromFiles(arg1:Array<string>):Promise<string>;
-
-export function GetBalance():Promise<number>;
-
-export function GetDepositAddress():Promise<string>;
-
 export function GetStats():Promise<main.Stats>;
 
 export function GetTorrent(arg1:string):Promise<main.TorrentInfo>;
@@ -27,7 +19,3 @@ export function RemoveTorrent(arg1:string,arg2:boolean):Promise<void>;
 export function ResumeTorrent(arg1:string):Promise<void>;
 
 export function SelectLocalFiles():Promise<Array<string>>;
-
-export function SelectTorrentFile():Promise<string>;
-
-export function SetDepositAddress(arg1:string):Promise<void>;

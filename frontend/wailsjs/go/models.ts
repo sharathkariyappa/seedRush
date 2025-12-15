@@ -1,10 +1,10 @@
 export namespace main {
 	
 	export class FileInfo {
-	    name: string;
 	    size: number;
-	    sizeStr: string;
 	    progress: number;
+	    name: string;
+	    sizeStr: string;
 	    path: string;
 	
 	    static createFrom(source: any = {}) {
@@ -13,10 +13,10 @@ export namespace main {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.name = source["name"];
 	        this.size = source["size"];
-	        this.sizeStr = source["sizeStr"];
 	        this.progress = source["progress"];
+	        this.name = source["name"];
+	        this.sizeStr = source["sizeStr"];
 	        this.path = source["path"];
 	    }
 	}
@@ -39,24 +39,24 @@ export namespace main {
 	    }
 	}
 	export class TorrentInfo {
+	    isPaused: boolean;
+	    peers: number;
+	    seeds: number;
+	    size: number;
+	    downloadSpeed: number;
+	    uploadSpeed: number;
+	    progress: number;
 	    id: string;
 	    name: string;
 	    infoHash: string;
-	    size: number;
 	    sizeStr: string;
-	    progress: number;
 	    status: string;
-	    downloadSpeed: number;
-	    uploadSpeed: number;
 	    downloadSpeedStr: string;
 	    uploadSpeedStr: string;
-	    peers: number;
-	    seeds: number;
 	    eta: string;
-	    files: FileInfo[];
 	    // Go type: time
 	    addedAt: any;
-	    isPaused: boolean;
+	    files: FileInfo[];
 	
 	    static createFrom(source: any = {}) {
 	        return new TorrentInfo(source);
@@ -64,23 +64,23 @@ export namespace main {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.isPaused = source["isPaused"];
+	        this.peers = source["peers"];
+	        this.seeds = source["seeds"];
+	        this.size = source["size"];
+	        this.downloadSpeed = source["downloadSpeed"];
+	        this.uploadSpeed = source["uploadSpeed"];
+	        this.progress = source["progress"];
 	        this.id = source["id"];
 	        this.name = source["name"];
 	        this.infoHash = source["infoHash"];
-	        this.size = source["size"];
 	        this.sizeStr = source["sizeStr"];
-	        this.progress = source["progress"];
 	        this.status = source["status"];
-	        this.downloadSpeed = source["downloadSpeed"];
-	        this.uploadSpeed = source["uploadSpeed"];
 	        this.downloadSpeedStr = source["downloadSpeedStr"];
 	        this.uploadSpeedStr = source["uploadSpeedStr"];
-	        this.peers = source["peers"];
-	        this.seeds = source["seeds"];
 	        this.eta = source["eta"];
-	        this.files = this.convertValues(source["files"], FileInfo);
 	        this.addedAt = this.convertValues(source["addedAt"], null);
-	        this.isPaused = source["isPaused"];
+	        this.files = this.convertValues(source["files"], FileInfo);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

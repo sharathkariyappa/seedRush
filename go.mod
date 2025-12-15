@@ -4,6 +4,7 @@ go 1.24.3
 
 require (
 	github.com/anacrolix/torrent v1.56.1
+	github.com/bsv-blockchain/go-sdk v1.2.13
 	github.com/wailsapp/wails/v2 v2.11.0
 )
 

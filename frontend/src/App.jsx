@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Play, Pause, Trash2, Plus, Download, Upload, Users, Settings, FolderOpen, Link, Search, X, FileUp, Clock, HardDrive, Wallet, DollarSign, Check, AlertCircle, Copy } from 'lucide-react';
 import { AddMagnet, AddTorrentFile, GetTorrents, GetStats, PauseTorrent, ResumeTorrent, RemoveTorrent, OpenDownloadFolder, SelectTorrentFile, SelectLocalFiles, GetBalance, SetDepositAddress, GetDepositAddress, CreateTorrentFromFiles } from '../wailsjs/go/main/App';
-import { EventsOn } from '../wailsjs/runtime/runtime';
+import { EventsOff, EventsOn } from '../wailsjs/runtime/runtime';
 
 const TorrentClient = () => {
   const [torrents, setTorrents] = useState([]);
@@ -25,36 +25,23 @@ const TorrentClient = () => {
   const [generatedMagnetLink, setGeneratedMagnetLink] = useState('');
   const [confirmDialog, setConfirmDialog] = useState(null);
 
-  // Load torrents on mount
   useEffect(() => {
     loadTorrents();
   
-    const unsubscribeUpdate = EventsOn('torrents-update', (data) => {
-      try {
-        const parsed = JSON.parse(data);
-        setTorrents(prevTorrents => {
-          const newTorrents = parsed.torrents || [];
-          if (JSON.stringify(prevTorrents) === JSON.stringify(newTorrents)) {
-            return prevTorrents;
-          }
-          return newTorrents;
-        });
-        
-        setStats(parsed.stats || stats);
-      } catch (e) {
-        console.error('Failed to parse update:', e);
-      }
+    EventsOn('torrents-update', (data) => {
+      setTorrents(data.torrents);
+      setStats(data.stats);
     });
   
-    const unsubscribeAdded = EventsOn('torrent-added', () => {
+    EventsOn('torrent-added', () => {
       loadTorrents();
       setSuccessMessage('Torrent added successfully!');
       setTimeout(() => setSuccessMessage(''), 3000);
     });
   
     return () => {
-      if (unsubscribeUpdate) unsubscribeUpdate();
-      if (unsubscribeAdded) unsubscribeAdded();
+      EventsOff('torrents-update');
+      EventsOff('torrent-added');
     };
   }, []);
 
@@ -718,7 +705,7 @@ const TorrentClient = () => {
                     placeholder="magnet:?xt=urn:btih:..."
                     value={magnetLink}
                     onChange={(e) => setMagnetLink(e.target.value)}
-                    onKeyPress={(e) => {
+                    onKeyDown={(e) => {
                       if (e.key === 'Enter' && magnetLink.trim()) {
                         handleAddMagnet();
                       }

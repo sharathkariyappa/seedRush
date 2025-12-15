@@ -1,7 +1,8 @@
+
 //@ts-check
 
 import { useState, useEffect, useMemo } from 'react';
-import { Play, Pause, Trash2, Plus, Download, Upload, Users, Settings, FolderOpen, Link, Search, X, FileUp, Clock, HardDrive, Wallet, Check, AlertCircle, Copy } from 'lucide-react';
+import { Play, Pause, Trash2, Plus, Download, Upload, Users, Settings, FolderOpen, Link, Search, X, FileUp, Clock, HardDrive, Check, AlertCircle, Copy } from 'lucide-react';
 import { AddMagnet, GetTorrents, GetStats, PauseTorrent, ResumeTorrent, RemoveTorrent, OpenDownloadFolder } from '../wailsjs/go/main/App';
 import { EventsOff, EventsOn } from '../wailsjs/runtime/runtime';
 import { SelectSeedPath } from '../wailsjs/go/main/App';
@@ -28,27 +29,37 @@ const TorrentClient = () => {
   const [confirmDialog, setConfirmDialog] = useState(null);
 
   useEffect(() => {
+    let mounted = true;
+    
+    const handleTorrentsUpdate = (data) => {
+      if (mounted) {
+        setTorrents(data.torrents || []);
+        setStats(data.stats);
+      }
+    };
+    
+    const handleTorrentAdded = () => {
+      if (mounted) {
+        loadTorrents();
+      }
+    };
+    
     loadTorrents();
-  
-    EventsOn('torrents-update', (data) => {
-      setTorrents(data.torrents);
-      setStats(data.stats);
-    });
-  
-    EventsOn('torrent-added', () => {
-      loadTorrents();
-    });
+    
+    EventsOn('torrents-update', handleTorrentsUpdate);
+    EventsOn('torrent-added', handleTorrentAdded);
   
     return () => {
-      EventsOff('torrents-update');
-      EventsOff('torrent-added');
+      mounted = false;
+      EventsOff('torrents-update', handleTorrentsUpdate);
+      EventsOff('torrent-added', handleTorrentAdded);
     };
   }, []);
 
   const loadTorrents = async () => {
     try {
       const result = await GetTorrents();
-      setTorrents(result);
+      setTorrents(result || []) ;
       const statsResult = await GetStats();
       setStats(statsResult);
     } catch (err) {
@@ -56,25 +67,16 @@ const TorrentClient = () => {
     }
   };
 
-  // const handleViewBalance = async () => {
-  //   try {
-  //     const balance = await GetBalance();
-  //     setWalletBalance(balance);
-  //     alert(`Your wallet balance: ${balance} BSV`);
-  //   } catch (err) {
-  //     setError('Failed to retrieve wallet balance');
-  //     setTimeout(() => setError(''), 3000);
-  //   }
-  // };
-
   const handleAddMagnet = async () => {
     if (!magnetLink.trim()) {
       setError('Please enter a magnet link');
+      setTimeout(() => setError(''), 3000);
       return;
     }
 
     if (!magnetLink.startsWith('magnet:?')) {
       setError('Invalid magnet link format');
+      setTimeout(() => setError(''), 3000);
       return;
     }
 
@@ -87,6 +89,7 @@ const TorrentClient = () => {
       setShowAddModal(false);
     } catch (err) {
       setError(err.message || 'Failed to add torrent');
+      setTimeout(() => setError(''), 3000);
     } finally {
       setLoading(false);
     }
@@ -98,9 +101,11 @@ const TorrentClient = () => {
       if (path) {
         setPath(path);
         setShowLocalFilesModal(true);
+        setError('');
       }
     } catch (err) {
       setError('Failed to select files');
+      setTimeout(() => setError(''), 3000);
     }
   };
 
@@ -111,10 +116,10 @@ const TorrentClient = () => {
     try {
       const magnetLink = await CreateTorrentFromPath(path);
       setGeneratedMagnetLink(magnetLink);
-
       await loadTorrents();
     } catch (err) {
       setError(err.message || 'Failed to create torrent');
+      setTimeout(() => setError(''), 3000);
     } finally {
       setLoading(false);
     }
@@ -123,6 +128,7 @@ const TorrentClient = () => {
   const handleCloseLocalFilesModal = () => {
     setShowLocalFilesModal(false);
     setGeneratedMagnetLink('');
+    setError('');
   };
 
   const handleToggleStatus = async (torrent) => {
@@ -137,6 +143,7 @@ const TorrentClient = () => {
     } catch (err) {
       console.error('Failed to toggle torrent:', err);
       setError('Failed to change torrent status');
+      setTimeout(() => setError(''), 3000);
     }
   };
 
@@ -191,8 +198,7 @@ const TorrentClient = () => {
   };
 
   const filteredTorrents = useMemo(() => {
-    return torrents
-      .filter(t => {
+    return torrents?.filter(t => {
         const matchesStatus = filterStatus === 'all' || t.status === filterStatus;
         const matchesSearch = t.name.toLowerCase().includes(searchQuery.toLowerCase());
         return matchesStatus && matchesSearch;
@@ -241,7 +247,7 @@ const TorrentClient = () => {
   };
 
   return (
-<div className="h-screen flex flex-col bg-[#081B2A] text-white">
+    <div className="h-screen flex flex-col bg-[#081B2A] text-white">
       {/* Top Bar */}
       <div className="bg-[#0E1F2D] px-6 py-4 border-b border-white/5">
         <div className="flex items-center justify-between">
@@ -326,7 +332,7 @@ const TorrentClient = () => {
               >
                 <span>{label}</span>
                 <span className="float-right text-xs text-gray-500">
-                  {key === 'all' ? torrents.length : torrents.filter(t => t.status === key).length}
+                  {key === 'all' ? torrents?.length : torrents.filter(t => t.status === key).length}
                 </span>
               </button>
             ))}
@@ -642,23 +648,23 @@ const TorrentClient = () => {
                     }}
                     className="w-full bg-[#0E1F2D] border border-white/5 rounded-lg pl-10 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#06E7ED] focus:border-transparent transition-all"
                     disabled={loading}
-                    />
-                    </div>
-                    <p className="text-xs text-gray-500 mt-2">
-                      Press Enter to add
-                      </p>
-                    </div>
-                    <div className="flex gap-3">
-            <button
-              onClick={handleAddMagnet}
-              disabled={loading || !magnetLink.trim()}
-              className="flex-1 bg-[#06E7ED] hover:bg-[#05CDD3] text-[#081B2A] rounded-lg py-3 font-semibold transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Adding...' : 'Add Magnet'}
-            </button>
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Press Enter to add
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleAddMagnet}
+                  disabled={loading || !magnetLink.trim()}
+                  className="flex-1 bg-[#06E7ED] hover:bg-[#05CDD3] text-[#081B2A] rounded-lg py-3 font-semibold transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? 'Adding...' : 'Add Magnet'}
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
         </div>
       )}
 

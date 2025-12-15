@@ -1,6 +1,3 @@
-
-//@ts-check
-
 import { useState, useEffect, useMemo } from 'react';
 import { Play, Pause, Trash2, Plus, Download, Upload, Users, Settings, FolderOpen, Link, Search, X, FileUp, Clock, HardDrive, Check, AlertCircle, Copy } from 'lucide-react';
 import { AddMagnet, GetTorrents, GetStats, PauseTorrent, ResumeTorrent, RemoveTorrent, OpenDownloadFolder } from '../wailsjs/go/main/App';

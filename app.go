@@ -50,18 +50,32 @@ func (a *App) startup(ctx context.Context) {
 		log.Default().Fatalf("Error: %s\n", err.Error())
 	}
 
-	// _, err = os.Stat(filepath.Join(homeDir, "wif.txt"))
-	// if err == os.ErrNotExist {
-	// 	a.wallet, err = createWallet()
-	// 	if err != nil {
-	// 		log.Default().Fatalf("Error: %s\n", err.Error())
-	// 	}
-	// } else {
-	// 	a.wallet, err = loadWallet(filepath.Join(homeDir, "wif.txt"))
-	// 	if err != nil {
-	// 		log.Default().Fatalf("Error: %s\n", err.Error())
-	// 	}
-	// }
+	_, err = os.Stat(filepath.Join(homeDir, "wif.txt"))
+	if err != nil {
+		a.wallet, err = createWallet()
+		if err != nil {
+			log.Default().Fatalf("Error: %s\n", err.Error())
+		}
+
+		file, err := os.OpenFile(filepath.Join(homeDir, "wif.txt"), os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0755)
+		if err != nil {
+			log.Default().Fatalf("Error: %s\n", err.Error())
+		}
+
+		defer file.Close()
+
+		_, err = file.Write([]byte(a.wallet.PrivateKey.Wif()))
+		if err != nil {
+			log.Default().Fatalf("Error: %s\n", err.Error())
+		}
+	} else {
+		a.wallet, err = loadWallet(filepath.Join(homeDir, "wif.txt"))
+		if err != nil {
+			log.Default().Fatalf("Error: %s\n", err.Error())
+		}
+	}
+
+	log.Default().Printf("Address: %s\n", a.wallet.WalletAddress.AddressString)
 
 	err = os.MkdirAll(a.downloadDir, 0755)
 	if err != nil {

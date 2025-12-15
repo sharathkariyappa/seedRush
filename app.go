@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"seedrush/broadcaster"
 	"time"
 
 	"github.com/bsv-blockchain/go-sdk/transaction"
@@ -23,6 +24,7 @@ import (
 
 func NewApp() *App {
 	return &App{
+		broadcaster:    broadcaster.NewBroadcaster(),
 		torrents:       make(map[string]*torrent.Torrent),
 		downloadSpeeds: make(map[string]*speedTracker),
 		uploadSpeeds:   make(map[string]*speedTracker),
@@ -166,6 +168,8 @@ func (a *App) startup(ctx context.Context) {
 								}
 							}
 
+							log.Default().Printf("Txid: %s\n", microTransaction.TxID().String())
+
 							microPayRequest.Type = "SENT"
 							microPayRequest.Txhex = microTransaction.Hex()
 							payload, extensionError := bencode.Marshal(&microPayRequest)
@@ -203,9 +207,9 @@ func (a *App) startup(ctx context.Context) {
 		var timer = time.Tick(5 * time.Second)
 
 		for range timer {
-			a.appStateLocker.Lock()
+			a.appStateLocker.RLock()
 			a.updateStatsLoop()
-			a.appStateLocker.Unlock()
+			a.appStateLocker.RUnlock()
 		}
 	}()
 }
@@ -222,12 +226,19 @@ func (a *App) shutdown(ctx context.Context) {
 }
 
 func (a *App) AddMagnet(magnetURI string) error {
+	println("hello")
+
 	a.appStateLocker.Lock()
 	defer a.appStateLocker.Unlock()
+
+	a.speedStatsLocker.Lock()
+	defer a.speedStatsLocker.Unlock()
 
 	if a.client == nil {
 		return fmt.Errorf("torrent client not initialized")
 	}
+
+	println("hello")
 
 	t, err := a.client.AddMagnet(magnetURI)
 	if err != nil {
@@ -236,10 +247,8 @@ func (a *App) AddMagnet(magnetURI string) error {
 
 	var infoHash string = t.InfoHash().String()
 
-	a.speedStatsLocker.Lock()
 	a.downloadSpeeds[infoHash] = &speedTracker{lastTime: time.Now()}
 	a.uploadSpeeds[infoHash] = &speedTracker{lastTime: time.Now()}
-	a.speedStatsLocker.Unlock()
 
 	a.torrents[infoHash] = t
 
@@ -262,15 +271,19 @@ func (a *App) AddMagnet(magnetURI string) error {
 }
 
 func (a *App) CreateTorrentFromPath(path string) (*string, error) {
+	println(path)
+
 	a.appStateLocker.Lock()
 	defer a.appStateLocker.Unlock()
 
 	a.speedStatsLocker.Lock()
-	defer a.speedStatsLocker.Lock()
+	defer a.speedStatsLocker.Unlock()
 
 	if a.client == nil {
 		return nil, fmt.Errorf("torrent client not initialized")
 	}
+
+	println(path)
 
 	var metaInfo metainfo.MetaInfo = metainfo.MetaInfo{
 		AnnounceList: builtinAnnounceList,
@@ -284,6 +297,7 @@ func (a *App) CreateTorrentFromPath(path string) (*string, error) {
 
 	var info = metainfo.Info{
 		PieceLength: metainfo.ChoosePieceLength(totalLength),
+		Name:        path,
 	}
 
 	err = info.BuildFromFilePath(path)
@@ -300,8 +314,6 @@ func (a *App) CreateTorrentFromPath(path string) (*string, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	defer pieceInformationStorage.Close()
 
 	t, _ := a.client.AddTorrentOpt(torrent.AddTorrentOpts{
 		InfoBytes: metaInfo.InfoBytes,
@@ -351,6 +363,8 @@ func (a *App) CreateTorrentFromPath(path string) (*string, error) {
 
 	var magnetUrl string = magnetLink.String()
 
+	println(magnetUrl)
+
 	return &magnetUrl, nil
 }
 
@@ -362,6 +376,7 @@ func (a *App) GetTorrents() ([]*SeedRushTorrentInfo, error) {
 	for hash := range a.torrents {
 		info, err := a.getTorrentInfo(hash)
 		if err != nil {
+			log.Default().Printf("Error: %s\n", err.Error())
 			return nil, err
 		}
 
@@ -546,9 +561,6 @@ func (a *App) saveTorrentsState() {
 }
 
 func (a *App) loadSavedTorrents() {
-	a.speedStatsLocker.Lock()
-	defer a.speedStatsLocker.Unlock()
-
 	data, err := os.ReadFile(a.stateFile)
 	if err != nil {
 		log.Default().Printf("Error: %s\n", err.Error())
@@ -591,9 +603,6 @@ func (a *App) loadSavedTorrents() {
 }
 
 func (a *App) getTorrentInfo(hash string) (*SeedRushTorrentInfo, error) {
-	a.speedStatsLocker.RLock()
-	defer a.speedStatsLocker.RUnlock()
-
 	t, found := a.torrents[hash]
 	if !found {
 		return nil, errors.New("torrent not found")

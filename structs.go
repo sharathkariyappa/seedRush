@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"seedrush/broadcaster"
 	"sync"
 	"time"
 
@@ -62,9 +63,11 @@ type TorrentState struct {
 }
 
 type App struct {
+	piecesDir        string
 	downloadDir      string
 	stateFile        string
 	ctx              context.Context
+	broadcaster      broadcaster.IBroadcaster
 	client           *torrent.Client
 	wallet           *FullWallet
 	appStateLocker   sync.RWMutex

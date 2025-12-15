@@ -12,9 +12,12 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/timechainlabs/torrent"
 	"github.com/timechainlabs/torrent/bencode"
+	"github.com/timechainlabs/torrent/metainfo"
 	pp "github.com/timechainlabs/torrent/peer_protocol"
+	"github.com/timechainlabs/torrent/storage"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -40,6 +43,7 @@ func (a *App) startup(ctx context.Context) {
 
 	a.downloadDir = filepath.Join(homeDir, "seedrush", "downloads")
 	a.stateFile = filepath.Join(homeDir, "seedrush", "torrents.json")
+	a.piecesDir = filepath.Join(homeDir, "seedrush", "pieces")
 
 	_, err = os.Stat(filepath.Join(homeDir, "wif.txt"))
 	if err == os.ErrNotExist {
@@ -55,6 +59,11 @@ func (a *App) startup(ctx context.Context) {
 	}
 
 	err = os.MkdirAll(a.downloadDir, 0755)
+	if err != nil {
+		log.Default().Fatalf("Error: %s\n", err.Error())
+	}
+
+	err = os.MkdirAll(a.piecesDir, 0755)
 	if err != nil {
 		log.Default().Fatalf("Error: %s\n", err.Error())
 	}
@@ -77,7 +86,7 @@ func (a *App) startup(ctx context.Context) {
 
 					case "SENT":
 						{
-							extensionError = nil
+							extensionError = a.broadcaster.Broadcast(microPayRequest.Txhex)
 							if extensionError != nil {
 								log.Default().Printf("Error: %s\n", extensionError.Error())
 								return
@@ -90,6 +99,65 @@ func (a *App) startup(ctx context.Context) {
 							}
 						}
 
+					case "REQUEST":
+						{
+							var microTransaction *transaction.Transaction
+							microTransaction, extensionError = transaction.NewTransactionFromHex(microPayRequest.Txhex)
+							if extensionError != nil {
+								log.Default().Printf("Error: %s\n", extensionError.Error())
+								return
+							}
+
+							var totalInputAmount uint64
+							for i := range a.wallet.WalletUtxos {
+								extensionError = microTransaction.AddInputFrom(
+									a.wallet.WalletUtxos[i].Txid,
+									a.wallet.WalletUtxos[i].Vout,
+									a.wallet.LockingScript.String(),
+									a.wallet.WalletUtxos[i].Satoshis,
+									a.wallet.UnlockingScriptTemplate,
+								)
+								if extensionError != nil {
+									log.Default().Printf("Error: %s\n", extensionError.Error())
+									return
+								}
+
+								totalInputAmount += a.wallet.WalletUtxos[i].Satoshis
+							}
+
+							extensionError = microTransaction.Sign()
+							if extensionError != nil {
+								log.Default().Printf("Error: %s\n", extensionError.Error())
+								return
+							}
+
+							var outputAmount uint64 = microTransaction.TotalOutputSatoshis()
+							if totalInputAmount < (outputAmount + (20 * uint64(len(microTransaction.Inputs))) + 10) {
+								return
+							}
+
+							if totalInputAmount > (outputAmount + (20 * uint64(len(microTransaction.Inputs))) + 10) {
+								microTransaction.AddOutput(&transaction.TransactionOutput{
+									Satoshis:      totalInputAmount - (outputAmount + (20 * uint64(len(microTransaction.Inputs))) + 10),
+									LockingScript: a.wallet.LockingScript,
+								})
+							}
+
+							microPayRequest.Type = "SENT"
+							microPayRequest.Txhex = microTransaction.Hex()
+							payload, extensionError := bencode.Marshal(&microPayRequest)
+							if extensionError != nil {
+								log.Default().Printf("Error: %s\n", extensionError.Error())
+								return
+							}
+
+							extensionError = m.PeerConn.WriteExtendedMessage(MICRO_PAY_EXTENSION_ID, payload)
+							if extensionError != nil {
+								log.Default().Printf("Error: %s\n", extensionError.Error())
+								return
+							}
+						}
+
 					default:
 						return
 					}
@@ -97,7 +165,7 @@ func (a *App) startup(ctx context.Context) {
 			},
 		},
 		ApproveOrNotPieceRequest: func(p *torrent.PeerConn, r torrent.Request) bool {
-			return createAndSendExtendedMessageWithTransaction(a.wallet, p, r, 10)
+			return createAndSendExtendedMessageWithTransaction(a.wallet, p, r, 100)
 		},
 	}
 
@@ -170,218 +238,91 @@ func (a *App) AddMagnet(magnetURI string) error {
 	return nil
 }
 
-// func (a *App) CreateTorrentFromPath(path string) (*string, error) {
-// 	if a.client == nil {
-// 		return nil, fmt.Errorf("torrent client not initialized")
-// 	}
+func (a *App) CreateTorrentFromPath(path string) (*string, error) {
+	a.appStateLocker.Lock()
+	defer a.appStateLocker.Unlock()
 
-// 	var metaInfo metainfo.MetaInfo = metainfo.MetaInfo{
-// 		AnnounceList: builtinAnnounceList,
-// 		CreationDate: time.Now().Unix(),
-// 	}
+	a.speedStatsLocker.Lock()
+	defer a.speedStatsLocker.Lock()
 
-// 	totalLength, err := totalLength(path)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	if a.client == nil {
+		return nil, fmt.Errorf("torrent client not initialized")
+	}
 
-// 	var info = metainfo.Info{
-// 		PieceLength: metainfo.ChoosePieceLength(totalLength),
-// 	}
+	var metaInfo metainfo.MetaInfo = metainfo.MetaInfo{
+		AnnounceList: builtinAnnounceList,
+		CreationDate: time.Now().Unix(),
+	}
 
-// 	err = info.BuildFromFilePath(path)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	totalLength, err := totalLength(path)
+	if err != nil {
+		return nil, err
+	}
 
-// 	metaInfo.InfoBytes, err = bencode.Marshal(&info)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	var info = metainfo.Info{
+		PieceLength: metainfo.ChoosePieceLength(totalLength),
+	}
 
-// 	if len(files) == 0 {
-// 		return nil, fmt.Errorf("no files provided")
-// 	}
+	err = info.BuildFromFilePath(path)
+	if err != nil {
+		return nil, err
+	}
 
-// 	var rootPath string
-// 	var isSingleFile bool
+	metaInfo.InfoBytes, err = bencode.Marshal(&info)
+	if err != nil {
+		return nil, err
+	}
 
-// 	if len(files) == 1 {
-// 		rootPath = files[0]
-// 		isSingleFile = true
-// 	} else {
-// 		parentDir := filepath.Dir(files[0])
-// 		for _, f := range files[1:] {
-// 			if filepath.Dir(f) != parentDir {
-// 				return nil, fmt.Errorf("all files must be in the same directory")
-// 			}
-// 		}
+	pieceInformationStorage, err := storage.NewDefaultPieceCompletionForDir(a.piecesDir)
+	if err != nil {
+		return nil, err
+	}
 
-// 		rootPath = parentDir
-// 		isSingleFile = false
-// 	}
+	defer pieceInformationStorage.Close()
 
-// 	info := metainfo.Info{
-// 		PieceLength: 256 * 1024,
-// 	}
+	t, _ := a.client.AddTorrentOpt(torrent.AddTorrentOpts{
+		InfoBytes: metaInfo.InfoBytes,
+		InfoHash:  metaInfo.HashInfoBytes(),
+		Storage: storage.NewFileOpts(storage.NewFileClientOpts{
+			ClientBaseDir: a.downloadDir,
+			FilePathMaker: func(opts storage.FilePathMakerOpts) string {
+				return filepath.Join(opts.File.Path...)
+			},
+			PieceCompletion: pieceInformationStorage,
+		}),
+	})
 
-// 	if err := info.BuildFromFilePath(rootPath); err != nil {
-// 		return nil, fmt.Errorf("failed to build torrent info: %w", err)
-// 	}
+	err = t.MergeSpec(&torrent.TorrentSpec{
+		Trackers: [][]string{{
+			"wss://tracker.btorrent.xyz",
+			"wss://tracker.openwebtorrent.com",
+			"http://p4p.arenabg.com:1337/announce",
+			"udp://tracker.opentrackr.org:1337/announce",
+			"udp://tracker.openbittorrent.com:6969/announce",
+		}},
+	})
+	if err != nil {
+		return nil, err
+	}
 
-// 	if isSingleFile {
-// 		info.Files = []metainfo.FileInfo{{
-// 			Path:   []string{},
-// 			Length: info.TotalLength(),
-// 		}}
-// 	}
+	<-t.GotInfo()
+	t.AllowDataDownload()
+	t.AllowDataUpload()
+	t.DownloadAll()
+	t.Seeding()
 
-// 	err := info.GeneratePieces(func(fi metainfo.FileInfo) (io.ReadCloser, error) {
-// 		var fullPath string
-// 		if isSingleFile {
-// 			fullPath = rootPath
-// 		} else {
-// 			fullPath = filepath.Join(rootPath, filepath.Join(fi.Path...))
-// 		}
+	var infoHash string = t.InfoHash().String()
 
-// 		return os.Open(fullPath)
-// 	})
-// 	if err != nil {
-// 		return nil, fmt.Errorf("failed to generate pieces: %w", err)
-// 	}
+	a.downloadSpeeds[infoHash] = &speedTracker{lastTime: time.Now()}
+	a.uploadSpeeds[infoHash] = &speedTracker{lastTime: time.Now()}
 
-// 	mi := metainfo.MetaInfo{
-// 		AnnounceList: [][]string{
-// 			{"udp://tracker.openbittorrent.com:6969/announce"},
-// 			{"udp://tracker.opentrackr.org:1337/announce"},
-// 			{"udp://open.stealth.si:80/announce"},
-// 			{"udp://tracker.torrent.eu.org:451/announce"},
-// 			{"udp://explodie.org:6969/announce"},
-// 		},
-// 		InfoBytes: bencode.MustMarshal(info),
-// 	}
-// 	mi.SetDefaults()
+	a.torrents[infoHash] = t
 
-// 	magnet, err := mi.MagnetV2()
-// 	if err != nil {
-// 		return nil, fmt.Errorf("failed to generate magnet link: %w", err)
-// 	}
-// 	magnetStr := magnet.String()
+	wailsruntime.EventsEmit(a.ctx, "torrent-added", infoHash)
+	a.saveTorrentsState()
 
-// 	hash := mi.HashInfoBytes().String()
-
-// 	storageBaseDir := rootPath
-
-// 	var pcDir string
-// 	if isSingleFile {
-// 		pcDir = filepath.Dir(rootPath)
-// 	} else {
-// 		pcDir = rootPath
-// 	}
-
-// 	pc, err := storage.NewDefaultPieceCompletionForDir(pcDir)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("failed to create piece completion: %w", err)
-// 	}
-
-// 	t, isNew := a.client.AddTorrentOpt(torrent.AddTorrentOpts{
-// 		InfoHash: mi.HashInfoBytes(),
-// 		Storage: storage.NewFileOpts(storage.NewFileClientOpts{
-// 			ClientBaseDir: storageBaseDir,
-// 			FilePathMaker: func(opts storage.FilePathMakerOpts) string {
-// 				return filepath.Join(opts.File.Path...)
-// 			},
-// 			TorrentDirMaker: nil,
-// 			PieceCompletion: pc,
-// 		}),
-// 	})
-
-// 	if !isNew {
-// 		log.Printf("⚠ Torrent already exists, using existing instance")
-// 	}
-
-// 	err = t.MergeSpec(&torrent.TorrentSpec{
-// 		InfoBytes: mi.InfoBytes,
-// 		Trackers:  mi.AnnounceList,
-// 	})
-// 	if err != nil {
-// 		return nil, fmt.Errorf("failed to merge torrent spec: %w", err)
-// 	}
-
-// 	<-t.GotInfo()
-
-// 	for _, file := range t.Files() {
-// 		var expectedPath string
-// 		if isSingleFile {
-// 			expectedPath = storageBaseDir
-// 		} else {
-// 			expectedPath = filepath.Join(storageBaseDir, file.Path())
-// 		}
-
-// 		if stat, err := os.Stat(expectedPath); err != nil {
-// 			log.Printf("❌ File NOT found: %s", err)
-// 		} else {
-// 			log.Printf("✓ File exists: size=%d", stat.Size())
-// 		}
-// 	}
-
-// 	t.Seeding()
-// 	t.AllowDataUpload()
-// 	t.AllowDataDownload()
-// 	t.VerifyData()
-
-// 	a.speedStatsLocker.Lock()
-// 	a.downloadSpeeds[hash] = &speedTracker{lastTime: time.Now()}
-// 	a.uploadSpeeds[hash] = &speedTracker{lastTime: time.Now()}
-// 	a.speedStatsLocker.Unlock()
-
-// 	a.torrents[hash] = t
-
-// 	t.AllowDataUpload()
-// 	t.AllowDataDownload()
-
-// 	t.VerifyData()
-
-// 	go func() {
-// 		time.Sleep(500 * time.Millisecond)
-
-// 		ticker := time.NewTicker(500 * time.Millisecond)
-// 		defer ticker.Stop()
-
-// 		timeout := time.After(60 * time.Second)
-// 		lastCompleted := int64(0)
-
-// 		for {
-// 			select {
-// 			case <-ticker.C:
-// 				completed := t.BytesCompleted()
-// 				total := t.Length()
-
-// 				if completed != lastCompleted {
-// 					percentage := float64(completed) / float64(total) * 100
-// 					lastCompleted = completed
-// 				}
-
-// 				if completed >= total {
-// 					wailsruntime.EventsEmit(a.ctx, "torrent-added", hash)
-// 					a.saveTorrentsState()
-// 					return
-// 				}
-
-// 			case <-timeout:
-// 				completed := t.BytesCompleted()
-// 				total := t.Length()
-// 				percentage := float64(completed) / float64(total) * 100
-
-// 				wailsruntime.EventsEmit(a.ctx, "torrent-added", hash)
-// 				a.saveTorrentsState()
-// 				return
-// 			}
-// 		}
-// 	}()
-
-// 	return nil, nil
-// }
+	return nil, nil
+}
 
 func (a *App) GetTorrents() ([]*TorrentInfo, error) {
 	a.appStateLocker.RLock()
@@ -575,6 +516,9 @@ func (a *App) saveTorrentsState() {
 }
 
 func (a *App) loadSavedTorrents() {
+	a.speedStatsLocker.Lock()
+	defer a.speedStatsLocker.Unlock()
+
 	data, err := os.ReadFile(a.stateFile)
 	if err != nil {
 		log.Default().Printf("Error: %s\n", err.Error())
@@ -599,10 +543,8 @@ func (a *App) loadSavedTorrents() {
 
 		var infoHash = t.InfoHash().String()
 
-		a.speedStatsLocker.Lock()
 		a.downloadSpeeds[infoHash] = &speedTracker{lastTime: time.Now()}
 		a.uploadSpeeds[infoHash] = &speedTracker{lastTime: time.Now()}
-		a.speedStatsLocker.Unlock()
 
 		a.torrents[infoHash] = t
 

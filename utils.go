@@ -22,7 +22,6 @@ var builtinAnnounceList = [][]string{
 }
 
 func totalLength(path string) (int64, error) {
-
 	var totalLength int64
 	err := filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
 		if info.IsDir() {

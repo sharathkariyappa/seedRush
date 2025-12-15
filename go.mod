@@ -1,17 +1,17 @@
-module torrentflow
+module seedrush
 
-go 1.24.3
+go 1.25.4
 
 require (
-	github.com/anacrolix/torrent v1.56.1
 	github.com/bsv-blockchain/go-sdk v1.2.13
+	github.com/timechainlabs/torrent v0.0.0-20251215050440-00174f9ec017
 	github.com/wailsapp/wails/v2 v2.11.0
 )
 
 require (
 	github.com/RoaringBitmap/roaring v1.2.3 // indirect
-	github.com/ajwerner/btree v0.0.0-20211221152037-f427b3e689c0 // indirect
 	github.com/alecthomas/atomic v0.1.0-alpha2 // indirect
+	github.com/anacrolix/btree v0.0.0-20251201064447-d86c3fa41bd8 // indirect
 	github.com/anacrolix/chansync v0.7.0 // indirect
 	github.com/anacrolix/dht/v2 v2.23.0 // indirect
 	github.com/anacrolix/envpprof v1.4.0 // indirect
@@ -25,6 +25,7 @@ require (
 	github.com/anacrolix/multiless v0.4.0 // indirect
 	github.com/anacrolix/stm v0.5.0 // indirect
 	github.com/anacrolix/sync v0.5.5-0.20251119100342-d78dd1f686f1 // indirect
+	github.com/anacrolix/torrent v1.48.1-0.20230103142631-c20f73d53e9f // indirect
 	github.com/anacrolix/upnp v0.1.4 // indirect
 	github.com/anacrolix/utp v0.1.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
@@ -43,6 +44,7 @@ require (
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/google/btree v1.1.2 // indirect
+	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/huandu/xstrings v1.3.2 // indirect
@@ -62,25 +64,24 @@ require (
 	github.com/multiformats/go-multihash v0.2.3 // indirect
 	github.com/multiformats/go-varint v0.0.6 // indirect
 	github.com/pion/datachannel v1.5.9 // indirect
-	github.com/pion/dtls/v2 v2.2.4 // indirect
-	github.com/pion/ice/v2 v2.2.6 // indirect
+	github.com/pion/dtls/v3 v3.0.3 // indirect
+	github.com/pion/ice/v4 v4.0.2 // indirect
 	github.com/pion/interceptor v0.1.40 // indirect
 	github.com/pion/logging v0.2.3 // indirect
-	github.com/pion/mdns v0.0.5 // indirect
+	github.com/pion/mdns/v2 v2.0.7 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/rtcp v1.2.15 // indirect
 	github.com/pion/rtp v1.8.18 // indirect
 	github.com/pion/sctp v1.8.33 // indirect
 	github.com/pion/sdp/v3 v3.0.9 // indirect
-	github.com/pion/srtp/v2 v2.0.9 // indirect
-	github.com/pion/stun v0.3.5 // indirect
-	github.com/pion/transport v0.13.1 // indirect
-	github.com/pion/transport/v2 v2.0.0 // indirect
-	github.com/pion/turn/v2 v2.0.8 // indirect
-	github.com/pion/udp v0.1.4 // indirect
-	github.com/pion/webrtc/v3 v3.1.42 // indirect
+	github.com/pion/srtp/v3 v3.0.4 // indirect
+	github.com/pion/stun/v3 v3.0.0 // indirect
+	github.com/pion/transport/v3 v3.0.7 // indirect
+	github.com/pion/turn/v4 v4.0.0 // indirect
+	github.com/pion/webrtc/v4 v4.0.0 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/protolambda/ctxlock v0.1.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rs/dnscache v0.0.0-20211102005908-e0241e321417 // indirect
@@ -92,6 +93,7 @@ require (
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/wailsapp/go-webview2 v1.0.22 // indirect
 	github.com/wailsapp/mimetype v1.4.1 // indirect
+	github.com/wlynxg/anet v0.0.3 // indirect
 	go.etcd.io/bbolt v1.3.6 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel v1.38.0 // indirect

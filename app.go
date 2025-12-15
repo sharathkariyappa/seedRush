@@ -192,7 +192,7 @@ func (a *App) startup(ctx context.Context) {
 			},
 		},
 		ApproveOrNotPieceRequest: func(p *torrent.PeerConn, r torrent.Request) bool {
-			return createAndSendExtendedMessageWithTransaction(a.wallet, p, r, 100)
+			return createAndSendExtendedMessageWithTransaction(a.wallet, p, r, 10)
 		},
 	}
 
@@ -452,7 +452,6 @@ func (a *App) RemoveTorrent(infoHash string, deleteFiles bool) error {
 		for _, file := range t.Files() {
 			err := os.Remove(filepath.Join(a.downloadDir, file.Path()))
 			if err != nil {
-				log.Default().Printf("Error: %s\n", err.Error())
 			}
 		}
 	}

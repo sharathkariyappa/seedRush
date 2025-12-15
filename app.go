@@ -82,6 +82,8 @@ func (a *App) startup(ctx context.Context) {
 		log.Default().Fatalf("Error: %s\n", err.Error())
 	}
 
+	log.Default().Printf("%v\n", a.wallet.WalletUtxos)
+
 	log.Default().Printf("Address: %s\n", a.wallet.WalletAddress.AddressString)
 
 	err = os.MkdirAll(a.downloadDir, 0755)
@@ -585,8 +587,6 @@ func (a *App) loadSavedTorrents() {
 			continue
 		}
 
-		<-t.GotInfo()
-
 		var infoHash = t.InfoHash().String()
 
 		a.downloadSpeeds[infoHash] = &speedTracker{lastTime: time.Now()}
@@ -598,6 +598,7 @@ func (a *App) loadSavedTorrents() {
 			a.pausedTorrents[infoHash] = true
 		} else {
 			go func() {
+				<-t.GotInfo()
 				t.AllowDataDownload()
 				t.AllowDataUpload()
 				t.DownloadAll()

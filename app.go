@@ -77,6 +77,11 @@ func (a *App) startup(ctx context.Context) {
 		}
 	}
 
+	err = a.wallet.Sync()
+	if err != nil {
+		log.Default().Fatalf("Error: %s\n", err.Error())
+	}
+
 	log.Default().Printf("Address: %s\n", a.wallet.WalletAddress.AddressString)
 
 	err = os.MkdirAll(a.downloadDir, 0755)
@@ -207,9 +212,9 @@ func (a *App) startup(ctx context.Context) {
 		var timer = time.Tick(5 * time.Second)
 
 		for range timer {
-			a.appStateLocker.RLock()
+			// a.appStateLocker.RLock()
 			a.updateStatsLoop()
-			a.appStateLocker.RUnlock()
+			// a.appStateLocker.RUnlock()
 		}
 	}()
 }
@@ -228,11 +233,11 @@ func (a *App) shutdown(ctx context.Context) {
 func (a *App) AddMagnet(magnetURI string) error {
 	println("hello")
 
-	a.appStateLocker.Lock()
-	defer a.appStateLocker.Unlock()
+	// a.appStateLocker.Lock()
+	// defer a.appStateLocker.Unlock()
 
-	a.speedStatsLocker.Lock()
-	defer a.speedStatsLocker.Unlock()
+	// a.speedStatsLocker.Lock()
+	// defer a.speedStatsLocker.Unlock()
 
 	if a.client == nil {
 		return fmt.Errorf("torrent client not initialized")
@@ -273,11 +278,11 @@ func (a *App) AddMagnet(magnetURI string) error {
 func (a *App) CreateTorrentFromPath(path string) (*string, error) {
 	println(path)
 
-	a.appStateLocker.Lock()
-	defer a.appStateLocker.Unlock()
+	// a.appStateLocker.Lock()
+	// defer a.appStateLocker.Unlock()
 
-	a.speedStatsLocker.Lock()
-	defer a.speedStatsLocker.Unlock()
+	// a.speedStatsLocker.Lock()
+	// defer a.speedStatsLocker.Unlock()
 
 	if a.client == nil {
 		return nil, fmt.Errorf("torrent client not initialized")
@@ -319,7 +324,7 @@ func (a *App) CreateTorrentFromPath(path string) (*string, error) {
 		InfoBytes: metaInfo.InfoBytes,
 		InfoHash:  metaInfo.HashInfoBytes(),
 		Storage: storage.NewFileOpts(storage.NewFileClientOpts{
-			ClientBaseDir: a.downloadDir,
+			ClientBaseDir: path,
 			FilePathMaker: func(opts storage.FilePathMakerOpts) string {
 				return filepath.Join(opts.File.Path...)
 			},

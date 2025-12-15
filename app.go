@@ -45,18 +45,23 @@ func (a *App) startup(ctx context.Context) {
 	a.stateFile = filepath.Join(homeDir, "seedrush", "torrents.json")
 	a.piecesDir = filepath.Join(homeDir, "seedrush", "pieces")
 
-	_, err = os.Stat(filepath.Join(homeDir, "wif.txt"))
-	if err == os.ErrNotExist {
-		a.wallet, err = createWallet()
-		if err != nil {
-			log.Default().Fatalf("Error: %s\n", err.Error())
-		}
-	} else {
-		a.wallet, err = loadWallet(filepath.Join(homeDir, "wif.txt"))
-		if err != nil {
-			log.Default().Fatalf("Error: %s\n", err.Error())
-		}
+	a.wallet, err = createWallet()
+	if err != nil {
+		log.Default().Fatalf("Error: %s\n", err.Error())
 	}
+
+	// _, err = os.Stat(filepath.Join(homeDir, "wif.txt"))
+	// if err == os.ErrNotExist {
+	// 	a.wallet, err = createWallet()
+	// 	if err != nil {
+	// 		log.Default().Fatalf("Error: %s\n", err.Error())
+	// 	}
+	// } else {
+	// 	a.wallet, err = loadWallet(filepath.Join(homeDir, "wif.txt"))
+	// 	if err != nil {
+	// 		log.Default().Fatalf("Error: %s\n", err.Error())
+	// 	}
+	// }
 
 	err = os.MkdirAll(a.downloadDir, 0755)
 	if err != nil {
@@ -131,16 +136,20 @@ func (a *App) startup(ctx context.Context) {
 								return
 							}
 
-							var outputAmount uint64 = microTransaction.TotalOutputSatoshis()
-							if totalInputAmount < (outputAmount + (20 * uint64(len(microTransaction.Inputs))) + 10) {
+							var totalSpentAmount uint64 = microTransaction.TotalOutputSatoshis() + (20 * uint64(len(microTransaction.Inputs))) + 10
+							if totalInputAmount < totalSpentAmount {
 								return
 							}
 
-							if totalInputAmount > (outputAmount + (20 * uint64(len(microTransaction.Inputs))) + 10) {
+							if totalInputAmount > totalSpentAmount {
 								microTransaction.AddOutput(&transaction.TransactionOutput{
-									Satoshis:      totalInputAmount - (outputAmount + (20 * uint64(len(microTransaction.Inputs))) + 10),
+									Satoshis:      totalInputAmount - totalSpentAmount,
 									LockingScript: a.wallet.LockingScript,
 								})
+
+								a.wallet.WalletUtxos = []UTXO{
+									{0, (totalInputAmount - totalSpentAmount), microTransaction.TxID().String()},
+								}
 							}
 
 							microPayRequest.Type = "SENT"
@@ -321,14 +330,21 @@ func (a *App) CreateTorrentFromPath(path string) (*string, error) {
 	wailsruntime.EventsEmit(a.ctx, "torrent-added", infoHash)
 	a.saveTorrentsState()
 
-	return nil, nil
+	magnetLink, err := metaInfo.MagnetV2()
+	if err != nil {
+		return nil, err
+	}
+
+	var magnetUrl string = magnetLink.String()
+
+	return &magnetUrl, nil
 }
 
-func (a *App) GetTorrents() ([]*TorrentInfo, error) {
+func (a *App) GetTorrents() ([]*SeedRushTorrentInfo, error) {
 	a.appStateLocker.RLock()
 	defer a.appStateLocker.RUnlock()
 
-	var torrents []*TorrentInfo
+	var torrents []*SeedRushTorrentInfo
 	for hash := range a.torrents {
 		info, err := a.getTorrentInfo(hash)
 		if err != nil {
@@ -341,7 +357,7 @@ func (a *App) GetTorrents() ([]*TorrentInfo, error) {
 	return torrents, nil
 }
 
-func (a *App) GetTorrent(infoHash string) (*TorrentInfo, error) {
+func (a *App) GetTorrent(infoHash string) (*SeedRushTorrentInfo, error) {
 	a.appStateLocker.RLock()
 	defer a.appStateLocker.RUnlock()
 
@@ -560,7 +576,7 @@ func (a *App) loadSavedTorrents() {
 	}
 }
 
-func (a *App) getTorrentInfo(hash string) (*TorrentInfo, error) {
+func (a *App) getTorrentInfo(hash string) (*SeedRushTorrentInfo, error) {
 	a.speedStatsLocker.RLock()
 	defer a.speedStatsLocker.RUnlock()
 
@@ -577,7 +593,7 @@ func (a *App) getTorrentInfo(hash string) (*TorrentInfo, error) {
 		progress = float64(t.BytesCompleted()) / float64(t.Length()) * 100
 	}
 
-	var files []FileInfo
+	var files []SeedRushFileInfo
 	if t.Info() != nil {
 		for _, file := range t.Files() {
 			var fileProgress float64
@@ -585,7 +601,7 @@ func (a *App) getTorrentInfo(hash string) (*TorrentInfo, error) {
 				fileProgress = float64(file.BytesCompleted()) / float64(file.Length()) * 100
 			}
 
-			files = append(files, FileInfo{
+			files = append(files, SeedRushFileInfo{
 				Size:     file.Length(),
 				Progress: fileProgress,
 				Name:     file.DisplayPath(),
@@ -609,7 +625,7 @@ func (a *App) getTorrentInfo(hash string) (*TorrentInfo, error) {
 		eta = formatDuration(time.Duration(((t.Length() - t.BytesCompleted()) / downloadSpeed)))
 	}
 
-	return &TorrentInfo{
+	return &SeedRushTorrentInfo{
 		IsPaused:      isPaused,
 		Peers:         stats.ActivePeers,
 		Seeds:         stats.ConnectedSeeders,
@@ -682,7 +698,7 @@ func (a *App) updateStatsLoop() {
 		}
 	}
 
-	var torrents []*TorrentInfo
+	var torrents []*SeedRushTorrentInfo
 	for hash := range a.torrents {
 		info, err := a.getTorrentInfo(hash)
 		if err != nil {

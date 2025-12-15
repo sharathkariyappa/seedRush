@@ -1,6 +1,6 @@
 export namespace main {
 	
-	export class FileInfo {
+	export class SeedRushFileInfo {
 	    size: number;
 	    progress: number;
 	    name: string;
@@ -8,7 +8,7 @@ export namespace main {
 	    path: string;
 	
 	    static createFrom(source: any = {}) {
-	        return new FileInfo(source);
+	        return new SeedRushFileInfo(source);
 	    }
 	
 	    constructor(source: any = {}) {
@@ -20,25 +20,7 @@ export namespace main {
 	        this.path = source["path"];
 	    }
 	}
-	export class Stats {
-	    totalDownload: string;
-	    totalUpload: string;
-	    activeTorrents: number;
-	    totalPeers: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new Stats(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.totalDownload = source["totalDownload"];
-	        this.totalUpload = source["totalUpload"];
-	        this.activeTorrents = source["activeTorrents"];
-	        this.totalPeers = source["totalPeers"];
-	    }
-	}
-	export class TorrentInfo {
+	export class SeedRushTorrentInfo {
 	    isPaused: boolean;
 	    peers: number;
 	    seeds: number;
@@ -56,10 +38,10 @@ export namespace main {
 	    eta: string;
 	    // Go type: time
 	    addedAt: any;
-	    files: FileInfo[];
+	    files: SeedRushFileInfo[];
 	
 	    static createFrom(source: any = {}) {
-	        return new TorrentInfo(source);
+	        return new SeedRushTorrentInfo(source);
 	    }
 	
 	    constructor(source: any = {}) {
@@ -80,7 +62,7 @@ export namespace main {
 	        this.uploadSpeedStr = source["uploadSpeedStr"];
 	        this.eta = source["eta"];
 	        this.addedAt = this.convertValues(source["addedAt"], null);
-	        this.files = this.convertValues(source["files"], FileInfo);
+	        this.files = this.convertValues(source["files"], SeedRushFileInfo);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -100,6 +82,24 @@ export namespace main {
 		    }
 		    return a;
 		}
+	}
+	export class Stats {
+	    totalDownload: string;
+	    totalUpload: string;
+	    activeTorrents: number;
+	    totalPeers: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Stats(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.totalDownload = source["totalDownload"];
+	        this.totalUpload = source["totalUpload"];
+	        this.activeTorrents = source["activeTorrents"];
+	        this.totalPeers = source["totalPeers"];
+	    }
 	}
 
 }

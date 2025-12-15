@@ -20,27 +20,27 @@ type speedTracker struct {
 	lastTime  time.Time
 }
 
-type TorrentInfo struct {
-	IsPaused      bool       `json:"isPaused"`
-	Peers         int        `json:"peers"`
-	Seeds         int        `json:"seeds"`
-	Size          int64      `json:"size"`
-	DownloadSpeed int64      `json:"downloadSpeed"`
-	UploadSpeed   int64      `json:"uploadSpeed"`
-	Progress      float64    `json:"progress"`
-	ID            string     `json:"id"`
-	Name          string     `json:"name"`
-	InfoHash      string     `json:"infoHash"`
-	SizeStr       string     `json:"sizeStr"`
-	Status        string     `json:"status"`
-	DownloadedStr string     `json:"downloadSpeedStr"`
-	UploadedStr   string     `json:"uploadSpeedStr"`
-	ETA           string     `json:"eta"`
-	UpdatedAt     time.Time  `json:"addedAt"`
-	Files         []FileInfo `json:"files"`
+type SeedRushTorrentInfo struct {
+	IsPaused      bool               `json:"isPaused"`
+	Peers         int                `json:"peers"`
+	Seeds         int                `json:"seeds"`
+	Size          int64              `json:"size"`
+	DownloadSpeed int64              `json:"downloadSpeed"`
+	UploadSpeed   int64              `json:"uploadSpeed"`
+	Progress      float64            `json:"progress"`
+	ID            string             `json:"id"`
+	Name          string             `json:"name"`
+	InfoHash      string             `json:"infoHash"`
+	SizeStr       string             `json:"sizeStr"`
+	Status        string             `json:"status"`
+	DownloadedStr string             `json:"downloadSpeedStr"`
+	UploadedStr   string             `json:"uploadSpeedStr"`
+	ETA           string             `json:"eta"`
+	UpdatedAt     time.Time          `json:"addedAt"`
+	Files         []SeedRushFileInfo `json:"files"`
 }
 
-type FileInfo struct {
+type SeedRushFileInfo struct {
 	Size     int64   `json:"size"`
 	Progress float64 `json:"progress"`
 	Name     string  `json:"name"`
@@ -73,8 +73,8 @@ type App struct {
 	appStateLocker   sync.RWMutex
 	speedStatsLocker sync.RWMutex
 	lastUpdateTime   time.Time
-	torrents         map[string]*torrent.Torrent
 	pausedTorrents   map[string]bool
+	torrents         map[string]*torrent.Torrent
 	downloadSpeeds   map[string]*speedTracker
 	uploadSpeeds     map[string]*speedTracker
 }

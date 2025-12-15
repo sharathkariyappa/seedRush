@@ -1,7 +1,11 @@
+//@ts-check
+
 import { useState, useEffect, useMemo } from 'react';
-import { Play, Pause, Trash2, Plus, Download, Upload, Users, Settings, FolderOpen, Link, Search, X, FileUp, Clock, HardDrive, Wallet, DollarSign, Check, AlertCircle, Copy } from 'lucide-react';
-import { AddMagnet, AddTorrentFile, GetTorrents, GetStats, PauseTorrent, ResumeTorrent, RemoveTorrent, OpenDownloadFolder, SelectTorrentFile, SelectLocalFiles, GetBalance, SetDepositAddress, GetDepositAddress, CreateTorrentFromFiles } from '../wailsjs/go/main/App';
+import { Play, Pause, Trash2, Plus, Download, Upload, Users, Settings, FolderOpen, Link, Search, X, FileUp, Clock, HardDrive, Wallet, Check, AlertCircle, Copy } from 'lucide-react';
+import { AddMagnet, GetTorrents, GetStats, PauseTorrent, ResumeTorrent, RemoveTorrent, OpenDownloadFolder } from '../wailsjs/go/main/App';
 import { EventsOff, EventsOn } from '../wailsjs/runtime/runtime';
+import { SelectSeedPath } from '../wailsjs/go/main/App';
+import { CreateTorrentFromPath } from '../wailsjs/go/main/App';
 
 const TorrentClient = () => {
   const [torrents, setTorrents] = useState([]);
@@ -12,6 +16,7 @@ const TorrentClient = () => {
     totalPeers: 0
   });
   const [selectedTorrent, setSelectedTorrent] = useState(null);
+  const [path, setPath] = useState();
   const [showAddModal, setShowAddModal] = useState(false);
   const [showLocalFilesModal, setShowLocalFilesModal] = useState(false);
   const [magnetLink, setMagnetLink] = useState('');
@@ -19,9 +24,6 @@ const TorrentClient = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
-  const [walletBalance, setWalletBalance] = useState('0.00000000');
-  const [selectedLocalFiles, setSelectedLocalFiles] = useState([]);
   const [generatedMagnetLink, setGeneratedMagnetLink] = useState('');
   const [confirmDialog, setConfirmDialog] = useState(null);
 
@@ -35,8 +37,6 @@ const TorrentClient = () => {
   
     EventsOn('torrent-added', () => {
       loadTorrents();
-      setSuccessMessage('Torrent added successfully!');
-      setTimeout(() => setSuccessMessage(''), 3000);
     });
   
     return () => {
@@ -48,8 +48,7 @@ const TorrentClient = () => {
   const loadTorrents = async () => {
     try {
       const result = await GetTorrents();
-      console.log('Loaded torrents:', result);
-      setTorrents(result || []);
+      setTorrents(result);
       const statsResult = await GetStats();
       setStats(statsResult);
     } catch (err) {
@@ -57,16 +56,16 @@ const TorrentClient = () => {
     }
   };
 
-  const handleViewBalance = async () => {
-    try {
-      const balance = await GetBalance();
-      setWalletBalance(balance);
-      alert(`Your wallet balance: ${balance} BSV`);
-    } catch (err) {
-      setError('Failed to retrieve wallet balance');
-      setTimeout(() => setError(''), 3000);
-    }
-  };
+  // const handleViewBalance = async () => {
+  //   try {
+  //     const balance = await GetBalance();
+  //     setWalletBalance(balance);
+  //     alert(`Your wallet balance: ${balance} BSV`);
+  //   } catch (err) {
+  //     setError('Failed to retrieve wallet balance');
+  //     setTimeout(() => setError(''), 3000);
+  //   }
+  // };
 
   const handleAddMagnet = async () => {
     if (!magnetLink.trim()) {
@@ -86,8 +85,6 @@ const TorrentClient = () => {
       await AddMagnet(magnetLink);
       setMagnetLink('');
       setShowAddModal(false);
-      setSuccessMessage('Fetching torrent metadata...');
-      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
       setError(err.message || 'Failed to add torrent');
     } finally {
@@ -95,61 +92,29 @@ const TorrentClient = () => {
     }
   };
 
-  const handleAddTorrentFile = async () => {
-    setLoading(true);
-    setError('');
-
+  const handleSelectSeedPath = async () => {
     try {
-      const filePath = await SelectTorrentFile();
-      if (filePath) {
-        await AddTorrentFile(filePath);
-        setShowAddModal(false);
-        setSuccessMessage('Torrent file added!');
-        setTimeout(() => setSuccessMessage(''), 3000);
-      }
-    } catch (err) {
-      setError(err.message || 'Failed to add torrent file');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSelectLocalFiles = async () => {
-    try {
-      const files = await SelectLocalFiles();
-      if (files && files.length > 0) {
-        setSelectedLocalFiles(files);
+      const path = await SelectSeedPath();
+      if (path) {
+        setPath(path);
         setShowLocalFilesModal(true);
       }
     } catch (err) {
       setError('Failed to select files');
-      setTimeout(() => setError(''), 3000);
     }
   };
 
   const handleCreateTorrent = async () => {
-    if (selectedLocalFiles.length === 0) {
-      setError('No files selected');
-      return;
-    }
-
     setLoading(true);
     setError('');
 
     try {
-      const magnetLink = await CreateTorrentFromFiles(selectedLocalFiles);
+      const magnetLink = await CreateTorrentFromPath(path);
       setGeneratedMagnetLink(magnetLink);
-      setSuccessMessage('Torrent created and seeding!');
-      
-      // Load torrents to show the new one
+
       await loadTorrents();
-      
-      setTimeout(() => {
-        setSuccessMessage('');
-      }, 5000);
     } catch (err) {
       setError(err.message || 'Failed to create torrent');
-      setTimeout(() => setError(''), 3000);
     } finally {
       setLoading(false);
     }
@@ -157,7 +122,6 @@ const TorrentClient = () => {
 
   const handleCloseLocalFilesModal = () => {
     setShowLocalFilesModal(false);
-    setSelectedLocalFiles([]);
     setGeneratedMagnetLink('');
   };
 
@@ -165,27 +129,18 @@ const TorrentClient = () => {
     try {
       if (torrent.status === 'paused' || torrent.status === 'stalled' || torrent.isPaused) {
         await ResumeTorrent(torrent.infoHash);
-        setSuccessMessage(`Resumed: ${torrent.name}`);
       } else {
         await PauseTorrent(torrent.infoHash);
-        setSuccessMessage(`Paused: ${torrent.name}`);
       }
-      setTimeout(() => setSuccessMessage(''), 2000);
+
       await loadTorrents();
     } catch (err) {
       console.error('Failed to toggle torrent:', err);
       setError('Failed to change torrent status');
-      setTimeout(() => setError(''), 3000);
     }
   };
 
   const handleRemoveTorrent = (torrent, deleteFiles = false) => {
-    console.log('🔍 handleRemoveTorrent called:', { 
-      name: torrent.name, 
-      infoHash: torrent.infoHash, 
-      deleteFiles 
-    });
-    
     setConfirmDialog({
       torrent,
       deleteFiles,
@@ -214,9 +169,6 @@ const TorrentClient = () => {
       console.log('🔄 Loading torrents...');
       await loadTorrents();
       console.log('✓ Torrents reloaded');
-      
-      setSuccessMessage(deleteFiles ? 'Torrent and files removed' : 'Torrent removed');
-      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
       console.error('❌ Failed to remove torrent:', err);
       setError(err.message || 'Failed to remove torrent');
@@ -236,8 +188,6 @@ const TorrentClient = () => {
 
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
-    setSuccessMessage('Copied to clipboard!');
-    setTimeout(() => setSuccessMessage(''), 2000);
   };
 
   const filteredTorrents = useMemo(() => {
@@ -291,18 +241,7 @@ const TorrentClient = () => {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-[#081B2A] text-white">
-      {/* Toast Notifications */}
-      {(successMessage || error) && (
-        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg ${
-          error ? 'bg-red-500/90' : 'bg-green-500/90'
-        } backdrop-blur-sm transition-all`}>
-          <p className="text-sm font-medium text-white">
-            {error || successMessage}
-          </p>
-        </div>
-      )}
-
+<div className="h-screen flex flex-col bg-[#081B2A] text-white">
       {/* Top Bar */}
       <div className="bg-[#0E1F2D] px-6 py-4 border-b border-white/5">
         <div className="flex items-center justify-between">
@@ -328,15 +267,6 @@ const TorrentClient = () => {
                 <span className="text-sm font-medium">{stats.totalUpload}</span>
               </div>
             </div>
-
-            <button 
-              onClick={handleViewBalance}
-              className="px-4 py-2 bg-[#06E7ED]/10 hover:bg-[#06E7ED]/20 text-[#06E7ED] rounded-lg transition-all flex items-center gap-2 text-sm font-medium border border-[#06E7ED]/20"
-              title="View Balance"
-            >
-              <Wallet className="w-4 h-4" />
-              Balance
-            </button>
 
             <button 
               onClick={handleOpenFolder}
@@ -366,7 +296,7 @@ const TorrentClient = () => {
           </button>
 
           <button
-            onClick={handleSelectLocalFiles}
+            onClick={handleSelectSeedPath}
             className="w-full bg-[#0E1F2D] hover:bg-white/5 text-white rounded-lg px-4 py-3 flex items-center justify-center gap-2 font-semibold transition-all border border-white/10 mb-6"
           >
             <FileUp className="w-5 h-5" />
@@ -726,14 +656,6 @@ const TorrentClient = () => {
             >
               {loading ? 'Adding...' : 'Add Magnet'}
             </button>
-            <button
-              onClick={handleAddTorrentFile}
-              disabled={loading}
-              className="px-6 bg-[#0E1F2D] hover:bg-white/5 border border-white/10 rounded-lg font-medium transition-all flex items-center gap-2 disabled:opacity-50"
-            >
-              <FileUp className="w-4 h-4" />
-              File
-            </button>
           </div>
         </div>
       </div>
@@ -763,20 +685,6 @@ const TorrentClient = () => {
             )}
 
             <div className="space-y-4">
-              <div>
-                <h3 className="text-sm font-semibold text-gray-400 mb-3">SELECTED FILES</h3>
-                <div className="bg-[#0E1F2D] rounded-lg p-4 border border-white/5 max-h-60 overflow-y-auto">
-                  {selectedLocalFiles.map((file, idx) => (
-                    <div key={idx} className="flex items-center gap-2 py-2 border-b border-white/5 last:border-0">
-                      <HardDrive className="w-4 h-4 text-[#06E7ED] flex-shrink-0" />
-                      <span className="text-sm text-gray-300 truncate flex-1" title={file}>
-                        {file.split('/').pop() || file.split('\\').pop()}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
               {loading && (
                 <div className="bg-[#06E7ED]/10 border border-[#06E7ED]/20 rounded-lg p-4">
                   <div className="flex items-center gap-3 mb-3">
@@ -821,7 +729,7 @@ const TorrentClient = () => {
                   <>
                     <button
                       onClick={handleCreateTorrent}
-                      disabled={loading || selectedLocalFiles.length === 0}
+                      disabled={loading}
                       className="flex-1 bg-[#06E7ED] hover:bg-[#05CDD3] text-[#081B2A] rounded-lg py-3 font-semibold transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                       {loading ? (
@@ -906,6 +814,6 @@ const TorrentClient = () => {
         </div>
       )}
     </div>
-
-);};
+  )
+};
 export default TorrentClient;

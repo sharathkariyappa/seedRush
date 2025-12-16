@@ -105,6 +105,8 @@ func loadWallet(path string) (*FullWallet, error) {
 func (w *FullWallet) Sync() error {
 	if time.Since(w.LastSync) < time.Minute {
 		return nil
+	} else {
+		w.LastSync = time.Now()
 	}
 
 	utxosRequest, err := http.NewRequest(

@@ -67,8 +67,8 @@ type TorrentState struct {
 }
 
 type TorrentFundState struct {
-	SatoshisSpend  uint64 `json:"satoshisSpend"`
-	SatoshisEarned uint64 `json:"satoshisEarned"`
+	SatoshisSpend  uint64
+	SatoshisEarned uint64
 }
 
 type App struct {

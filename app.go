@@ -550,9 +550,10 @@ func (a *App) RequestFunds(amount uint64) error {
 		Description: "TopUp Seedrush Wallet",
 		Outputs: []wallet.CreateActionOutput{
 			wallet.CreateActionOutput{
-				Satoshis:      amount,
-				LockingScript: a.wallet.LockingScript.Bytes(),
-				Tags:          []string{"SEEDRUSH"},
+				OutputDescription: "TopUp Seedrush Wallet Output",
+				Satoshis:          amount,
+				LockingScript:     a.wallet.LockingScript.Bytes(),
+				Tags:              []string{"SEEDRUSH"},
 			},
 		},
 		Labels: []string{"SEEDRUSH"},

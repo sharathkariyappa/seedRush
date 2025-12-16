@@ -581,6 +581,11 @@ func (a *App) saveTorrentsState() {
 			magnetURI = magnetLink.String()
 		}
 
+		_, found := a.torrentsState[hash]
+		if !found {
+			a.torrentsState[hash] = new(TorrentState)
+		}
+
 		var state = TorrentState{
 			IsPaused:       a.pausedTorrents[hash],
 			SatoshisEarned: a.torrentsState[hash].SatoshisEarned,

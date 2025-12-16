@@ -67,7 +67,8 @@ const TorrentClient = () => {
   }, []);
 
   // console.log(walletInfo);
-  // console.log(torrents);
+  console.log(torrents);
+  // console.log(earnings)
 
   const DEMO_WALLET = {
     address: "1FfmbHfnpaZjKFvyi1okTjJJusN455paPH",
@@ -131,7 +132,7 @@ const TorrentClient = () => {
   
   const handleViewEarnings = async () => {
     try {
-      setEarnings(torrents.satoshisEarned ? DEMO_EARNINGS : []);
+      setEarnings(torrents);
       setShowEarningsModal(true);
     } catch {
       setError("Failed to load earnings");
@@ -150,12 +151,12 @@ const TorrentClient = () => {
   };
 
   const handleRequestPayment = async () => {
-    // const bsv = (amountToRequest);
-    if (!amountToRequest || amountToRequest <= 0) return;
+    const bsv = parseInt(amountToRequest);
+    if (!bsv || bsv <= 0) return;
   
     // const satoshis = Math.floor(bsv * 100_000_000);
-    console.log('Requesting funds:', amountToRequest, 'satoshis');
-    await RequestFunds(satoshis);
+    console.log('Requesting funds:', bsv, 'satoshis');
+    await RequestFunds(bsv);
   
     setAmountToRequest("");
   };
@@ -163,6 +164,7 @@ const TorrentClient = () => {
 const handleRefreshBalance = async () => {
     try {
       setLoading(true);
+      await Sync();
       setWalletInfo(await GetWalletState());
     } catch (err) {
       setError('Failed to refresh balance');
@@ -482,11 +484,11 @@ const handleRefreshBalance = async () => {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Total earned</span>
-                <span className="font-medium text-green-400">${earnings.reduce((sum, e) => sum + e.amount, 0)}</span>
+                <span className="font-medium text-green-400">${earnings}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Total spent</span>
-                <span className="font-medium text-green-400">${spent.reduce((sum, e) => sum + e.amount, 0)}</span>
+                <span className="font-medium text-green-400">${spent}</span>
               </div>
             </div>
           </div>
@@ -579,6 +581,12 @@ const handleRefreshBalance = async () => {
                             $ 10 BSV/Mb
                           </span>
                         )}
+                        <span className='px-2 py-1 rounded'>
+                          {torrent.satoshisEarned}
+                        </span>
+                        <span className='px-2 py-1 rounded'>
+                          {torrent.satoshisSpend}
+                        </span>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 ml-4">
@@ -1042,23 +1050,11 @@ const handleRefreshBalance = async () => {
               <DollarSign className="w-5 h-5 text-green-400" />
               Earnings
             </h2>
-            {earnings.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-8">No earnings yet. Start seeding torrents to earn BSV!</p>
-            ) : (
               <div className="space-y-2">
-                {earnings.map((e, idx) => (
-                  <div key={idx} className="p-3 bg-[#0E1F2D] rounded-lg flex justify-between items-center text-sm border border-white/5">
-                    <div className="flex-1 min-w-0 mr-3">
-                      <p className="truncate font-medium text-white">{e.torrentName}</p>
-                      <p className="text-xs text-gray-500 truncate">{e.torrentHash}</p>
-                    </div>
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-green-400">{e.amount} BSV</span>
+                      <span className="font-medium text-green-400">{earnings} BSV</span>
                     </div>
-                  </div>
-                ))}
               </div>
-            )}
             <button onClick={() => setShowEarningsModal(false)} className="mt-4 w-full py-2 rounded-lg text-sm text-gray-400 hover:text-white transition-all">Close</button>
           </div>
         </div>
@@ -1072,23 +1068,11 @@ const handleRefreshBalance = async () => {
               <DollarSign className="w-5 h-5 text-green-400" />
               Spent
             </h2>
-            {spent.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-8">Nothing spent yet. Start downloading torrents.</p>
-            ) : (
               <div className="space-y-2">
-                {spent.map((e, idx) => (
-                  <div key={idx} className="p-3 bg-[#0E1F2D] rounded-lg flex justify-between items-center text-sm border border-white/5">
-                    <div className="flex-1 min-w-0 mr-3">
-                      <p className="truncate font-medium text-white">{e.torrentName}</p>
-                      <p className="text-xs text-gray-500 truncate">{e.torrentHash}</p>
-                    </div>
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-green-400">{e.amount} BSV</span>
+                      <span className="font-medium text-green-400">{spent} BSV</span>
                     </div>
-                  </div>
-                ))}
               </div>
-            )}
             <button onClick={() => setShowSpentsModal(false)} className="mt-4 w-full py-2 rounded-lg text-sm text-gray-400 hover:text-white transition-all">Close</button>
           </div>
         </div>

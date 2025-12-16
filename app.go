@@ -50,7 +50,12 @@ func (a *App) startup(ctx context.Context) {
 	a.stateFile = filepath.Join(homeDir, "seedrush", "torrents.json")
 	a.piecesDir = filepath.Join(homeDir, "seedrush", "pieces")
 
-	a.wallet, err = createWallet()
+	err = os.MkdirAll(a.downloadDir, 0755)
+	if err != nil {
+		log.Default().Fatalf("Error: %s\n", err.Error())
+	}
+
+	err = os.MkdirAll(a.piecesDir, 0755)
 	if err != nil {
 		log.Default().Fatalf("Error: %s\n", err.Error())
 	}
@@ -88,16 +93,6 @@ func (a *App) startup(ctx context.Context) {
 	}
 
 	log.Default().Printf("Address: %s\n", a.wallet.WalletAddress.AddressString)
-
-	err = os.MkdirAll(a.downloadDir, 0755)
-	if err != nil {
-		log.Default().Fatalf("Error: %s\n", err.Error())
-	}
-
-	err = os.MkdirAll(a.piecesDir, 0755)
-	if err != nil {
-		log.Default().Fatalf("Error: %s\n", err.Error())
-	}
 
 	bitClientConfig := torrent.NewDefaultClientConfig()
 	bitClientConfig.DataDir = a.downloadDir

@@ -27,9 +27,6 @@ const TorrentClient = () => {
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [showEarningsModal, setShowEarningsModal] = useState(false);
   const [showSpentModal, setShowSpentsModal] = useState(false);
-  const [txHistory, setTxHistory] = useState([]);
-  const [earnings, setEarnings] = useState([]);
-  const [spent, setSpent] = useState([]);
   const [walletInfo, setWalletInfo] = useState(null);
   const [amountToRequest, setAmountToRequest] = useState("");
 
@@ -69,60 +66,10 @@ const TorrentClient = () => {
   // console.log(walletInfo);
   console.log(torrents);
   // console.log(earnings)
-
-  const DEMO_WALLET = {
-    address: "1FfmbHfnpaZjKFvyi1okTjJJusN455paPH",
-    balance: 12.345,
-  };
   
-  const DEMO_TX_HISTORY = [
-    {
-      type: "RECEIVE",
-      amount: 1.25,
-      txid: "a3f1b8d9c24f91e9d7ab1234567890abcdef",
-    },
-    {
-      type: "SEND",
-      amount: -0.5,
-      txid: "b9d21c7a8e34f92abcde567890123456789",
-    },
-    {
-      type: "REWARD",
-      amount: 0.75,
-      txid: "c8e9f123ab4567890123456789abcdef",
-    },
-  ];
-  
-  const DEMO_EARNINGS = [
-    {
-      torrentName: "Ubuntu 22.04 ISO",
-      torrentHash: "8d3f9a1c7b2e4f6a9c0d",
-      amount: 3.2,
-    },
-    {
-      torrentName: "Open Source Movie",
-      torrentHash: "f1a9b8c7d6e5a4321098",
-      amount: 1.8,
-    },
-  ];
-  const DEMO_SPENT = [
-    {
-      torrentName: "Ubuntu 22.04 ISO",
-      torrentHash: "8d3f9a1c7b2e4f6a9c0d",
-      amount: 5,
-    },
-    {
-      torrentName: "Open Source Movie",
-      torrentHash: "f1a9b8c7d6e5a4321098",
-      amount: 10,
-    },
-  ];
-  
-
   const handleViewWallet = async () => {
     try {
-      setWalletInfo(walletInfo || DEMO_WALLET);
-      setTxHistory(DEMO_TX_HISTORY);
+      setWalletInfo(walletInfo);
       setShowWalletModal(true);
     } catch {
       setError("Failed to load wallet details");
@@ -132,7 +79,6 @@ const TorrentClient = () => {
   
   const handleViewEarnings = async () => {
     try {
-      setEarnings(torrents);
       setShowEarningsModal(true);
     } catch {
       setError("Failed to load earnings");
@@ -142,7 +88,6 @@ const TorrentClient = () => {
 
   const handleViewSpent = async () => {
     try {
-      setSpent(torrents.satoshisSpend ? DEMO_SPENT : []);
       setShowSpentsModal(true);
     } catch {
       setError("Failed to load earnings");
@@ -151,14 +96,20 @@ const TorrentClient = () => {
   };
 
   const handleRequestPayment = async () => {
-    const bsv = parseInt(amountToRequest);
-    if (!bsv || bsv <= 0) return;
-  
-    // const satoshis = Math.floor(bsv * 100_000_000);
-    console.log('Requesting funds:', bsv, 'satoshis');
-    await RequestFunds(bsv);
-  
-    setAmountToRequest("");
+    const sats = parseInt(amountToRequest);
+    
+    if (!amountToRequest || isNaN(sats) || sats <= 0) {
+      alert('Please enter a valid amount greater than 0');
+      return;
+    }
+    
+    try {
+      await RequestFunds(sats);
+      setAmountToRequest("");
+    } catch (error) {
+      console.error('Error requesting funds:', error);
+      alert('Failed to request payment. Please try again.');
+    }
   };
   
 const handleRefreshBalance = async () => {
@@ -402,7 +353,7 @@ const handleRefreshBalance = async () => {
 
             <button onClick={handleViewWallet} className="px-4 py-2 bg-[#06E7ED]/10 hover:bg-[#06E7ED]/20 text-[#06E7ED] rounded-lg transition-all flex items-center gap-2 text-sm font-medium border border-[#06E7ED]/20">
               <Wallet className="w-4 h-4" />
-              {walletInfo ? `${walletInfo.balance} BSV` : 'View Wallet'}
+              {walletInfo ? `${walletInfo.balance} SATS` : 'View Wallet'}
             </button>
 
             <button 
@@ -484,11 +435,15 @@ const handleRefreshBalance = async () => {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Total earned</span>
-                <span className="font-medium text-green-400">${earnings}</span>
+                <span className="font-medium text-green-400">
+                  {torrents.reduce((sum, t) => sum + (t.satoshisEarned || 0), 0)} SATS
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Total spent</span>
-                <span className="font-medium text-green-400">${spent}</span>
+                <span className="font-medium text-red-400">
+                  {torrents.reduce((sum, t) => sum + (t.satoshisSpend || 0), 0)} SATS
+                </span>
               </div>
             </div>
           </div>
@@ -568,25 +523,25 @@ const handleRefreshBalance = async () => {
                         <span className={`px-2 py-0.5 rounded ${getStatusColor(torrent.status)}`}>
                           {getStatusDisplay(torrent.status)}
                         </span>
-                        {torrent.status === "seeding" && (
+                        {/* {torrent.status === "seeding" && (
                           <span className="text-[#06E7ED] flex items-center gap-1">
                             <Download className="w-3 h-3" />
-                            $ 10 BSV/Mb
+                            $ 10 satoshis/32kb
                           </span>
                         )}
 
                         {torrent.status === "downloading" && (
                           <span className="text-[#06E7ED] flex items-center gap-1">
                             <Upload className="w-3 h-3" />
-                            $ 10 BSV/Mb
+                            $ 10 satoshis/kb
                           </span>
-                        )}
-                        <span className='px-2 py-1 rounded'>
+                        )} */}
+                        {/* <span className='px-2 py-1 rounded'>
                           {torrent.satoshisEarned}
                         </span>
                         <span className='px-2 py-1 rounded'>
                           {torrent.satoshisSpend}
-                        </span>
+                        </span> */}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 ml-4">
@@ -627,16 +582,28 @@ const handleRefreshBalance = async () => {
                         style={{ width: `${Math.min(torrent.progress, 100)}%` }}
                       />
                     </div>
-                    <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-3">
                       <span className="text-[#06E7ED] flex items-center gap-1">
                         <Download className="w-3 h-3" />
                         {torrent.downloadSpeedStr}
                       </span>
                       <span className="text-green-400 flex items-center gap-1">
+                        <img src="/bitcoin-btc-logo.svg" alt="BTC" className="w-4 h-4" />
+                        {torrent.satoshisSpend} SATS
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-green-400 flex items-center gap-1">
                         <Upload className="w-3 h-3" />
                         {torrent.uploadSpeedStr}
                       </span>
+                      <span className="text-[#06E7ED] flex items-center gap-1">
+                        <img src="/bitcoin-btc-logo.svg" alt="BTC" className="w-4 h-4" />
+                        {torrent.satoshisEarned} SATS
+                      </span>
                     </div>
+                  </div>
                   </div>
                 </div>
               ))
@@ -1003,23 +970,29 @@ const handleRefreshBalance = async () => {
               </button>
               <div className="flex gap-2">
                 <input
-                  type="text"
+                  type="number"
                   placeholder="Enter amount in sats"
                   value={amountToRequest}
-                  onChange={(e) => setAmountToRequest(e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === '' || (Number(value) >= 0 && !isNaN(value))) {
+                      setAmountToRequest(value);
+                    }
+                  }}
+                  min="1"
                   className="flex-1 bg-[#0E1F2D] border border-white/5 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-[#06E7ED]"
                 />
                 <button
                   onClick={handleRequestPayment}
-                  disabled={!amountToRequest}
-                  className="bg-[#06E7ED] hover:bg-[#05CDD3] text-[#081B2A] px-4 rounded-lg font-semibold transition-all disabled:opacity-50"
+                  disabled={!amountToRequest || parseInt(amountToRequest) <= 0}
+                  className="bg-[#06E7ED] hover:bg-[#05CDD3] text-[#081B2A] px-4 rounded-lg font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Request Payment
                 </button>
               </div>
             </div>
 
-            <h3 className="mt-6 mb-3 font-semibold text-gray-400 flex items-center gap-2">
+            {/* <h3 className="mt-6 mb-3 font-semibold text-gray-400 flex items-center gap-2">
               <History className="w-4 h-4" />
               Transaction History
             </h3>
@@ -1035,7 +1008,7 @@ const handleRefreshBalance = async () => {
                   </div>
                 ))
               )}
-            </div>
+            </div> */}
 
             <button onClick={() => setShowWalletModal(false)} className="mt-4 w-full py-2 rounded-lg text-sm text-gray-400 hover:text-white transition-all">Close</button>
           </div>
@@ -1046,16 +1019,51 @@ const handleRefreshBalance = async () => {
       {showEarningsModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-[#0C2437] rounded-2xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto">
-            <h2 className="mb-4 text-lg font-bold text-white flex items-center gap-2">
-              <DollarSign className="w-5 h-5 text-green-400" />
-              Earnings
-            </h2>
-              <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-green-400">{earnings} BSV</span>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <DollarSign className="w-6 h-6 text-green-400" />
+                Earnings
+              </h2>
+              <button 
+                onClick={() => setShowEarningsModal(false)} 
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 mb-6">
+              {filteredTorrents.map((torrent, index) => (
+                <div 
+                  key={index} 
+                  className="bg-[#0A1929] rounded-lg p-4 border border-gray-700/50 hover:border-green-400/30 transition-all"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-white font-medium truncate mb-1">
+                        {torrent.name}
+                      </h3>
+                      <p className="text-gray-400 text-sm">
+                        {torrent.peers} peers • {torrent.size}
+                      </p>
                     </div>
-              </div>
-            <button onClick={() => setShowEarningsModal(false)} className="mt-4 w-full py-2 rounded-lg text-sm text-gray-400 hover:text-white transition-all">Close</button>
+                    <div className="ml-4 text-right">
+                      <span className="text-green-400 font-bold text-lg">
+                        {torrent.satoshisEarned}
+                      </span>
+                      <p className="text-gray-500 text-xs">SATS</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <button 
+              onClick={() => setShowEarningsModal(false)} 
+              className="w-full py-3 rounded-lg bg-[#0A1929] text-white hover:bg-[#1a3a52] transition-all font-medium"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}
@@ -1064,16 +1072,51 @@ const handleRefreshBalance = async () => {
       {showSpentModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-[#0C2437] rounded-2xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto">
-            <h2 className="mb-4 text-lg font-bold text-white flex items-center gap-2">
-              <DollarSign className="w-5 h-5 text-green-400" />
-              Spent
-            </h2>
-              <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-green-400">{spent} BSV</span>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <DollarSign className="w-6 h-6 text-green-400" />
+                Spent
+              </h2>
+              <button 
+                onClick={() => setShowSpentsModal(false)} 
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 mb-6">
+              {filteredTorrents.map((torrent, index) => (
+                <div 
+                  key={index} 
+                  className="bg-[#0A1929] rounded-lg p-4 border border-gray-700/50 hover:border-green-400/30 transition-all"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-white font-medium truncate mb-1">
+                        {torrent.name}
+                      </h3>
+                      <p className="text-gray-400 text-sm">
+                        {torrent.peers} peers • {torrent.size}
+                      </p>
                     </div>
-              </div>
-            <button onClick={() => setShowSpentsModal(false)} className="mt-4 w-full py-2 rounded-lg text-sm text-gray-400 hover:text-white transition-all">Close</button>
+                    <div className="ml-4 text-right">
+                      <span className="text-green-400 font-bold text-lg">
+                        {torrent.satoshisSpend}
+                      </span>
+                      <p className="text-gray-500 text-xs">SATS</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <button 
+              onClick={() => setShowSpentsModal(false)} 
+              className="w-full py-3 rounded-lg bg-[#0A1929] text-white hover:bg-[#1a3a52] transition-all font-medium"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}

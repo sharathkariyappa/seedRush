@@ -133,8 +133,6 @@ func (w *FullWallet) Sync() error {
 		return err
 	}
 
-	log.Default().Printf("%v\n", utxosResponse.Utxos)
-
 	w.WalletUtxos = utxosResponse.Utxos
 
 	return nil

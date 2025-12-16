@@ -300,7 +300,6 @@ func (a *App) CreateTorrentFromPath(path string) (*string, error) {
 	}
 
 	var metaInfo metainfo.MetaInfo = metainfo.MetaInfo{
-		AnnounceList: builtinAnnounceList,
 		CreationDate: time.Now().Unix(),
 	}
 
@@ -664,7 +663,6 @@ func (a *App) loadSavedTorrents() {
 				<-t.GotInfo()
 				t.AllowDataDownload()
 				t.AllowDataUpload()
-				t.DownloadAll()
 				t.Seeding()
 			}()
 		}

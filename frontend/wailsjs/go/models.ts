@@ -27,6 +27,8 @@ export namespace main {
 	    size: number;
 	    downloadSpeed: number;
 	    uploadSpeed: number;
+	    satoshisSpend: number;
+	    satoshisEarned: number;
 	    progress: number;
 	    id: string;
 	    name: string;
@@ -52,6 +54,8 @@ export namespace main {
 	        this.size = source["size"];
 	        this.downloadSpeed = source["downloadSpeed"];
 	        this.uploadSpeed = source["uploadSpeed"];
+	        this.satoshisSpend = source["satoshisSpend"];
+	        this.satoshisEarned = source["satoshisEarned"];
 	        this.progress = source["progress"];
 	        this.id = source["id"];
 	        this.name = source["name"];
@@ -99,6 +103,20 @@ export namespace main {
 	        this.totalUpload = source["totalUpload"];
 	        this.activeTorrents = source["activeTorrents"];
 	        this.totalPeers = source["totalPeers"];
+	    }
+	}
+	export class WalletState {
+	    balance: number;
+	    address: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new WalletState(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.balance = source["balance"];
+	        this.address = source["address"];
 	    }
 	}
 

@@ -22,6 +22,10 @@ export function GetTorrents() {
   return window['go']['main']['App']['GetTorrents']();
 }
 
+export function GetWalletState() {
+  return window['go']['main']['App']['GetWalletState']();
+}
+
 export function OpenDownloadFolder() {
   return window['go']['main']['App']['OpenDownloadFolder']();
 }

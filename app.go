@@ -26,6 +26,7 @@ func NewApp() *App {
 	return &App{
 		broadcaster:    broadcaster.NewBroadcaster(),
 		torrents:       make(map[string]*torrent.Torrent),
+		torrentsState:  make(map[string]*TorrentState),
 		downloadSpeeds: make(map[string]*speedTracker),
 		uploadSpeeds:   make(map[string]*speedTracker),
 		pausedTorrents: make(map[string]bool),
@@ -33,8 +34,8 @@ func NewApp() *App {
 }
 
 func (a *App) startup(ctx context.Context) {
-	// a.appStateLocker.Lock()
-	// defer a.appStateLocker.Unlock()
+	a.appStateLocker.Lock()
+	defer a.appStateLocker.Unlock()
 
 	a.ctx = ctx
 
@@ -52,14 +53,16 @@ func (a *App) startup(ctx context.Context) {
 		log.Default().Fatalf("Error: %s\n", err.Error())
 	}
 
-	_, err = os.Stat(filepath.Join(homeDir, "wif.txt"))
+	_, err = os.Stat(filepath.Join(homeDir, "seedrush", "wif.txt"))
 	if err != nil {
 		a.wallet, err = createWallet()
 		if err != nil {
 			log.Default().Fatalf("Error: %s\n", err.Error())
 		}
 
-		file, err := os.OpenFile(filepath.Join(homeDir, "wif.txt"), os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0755)
+		file, err := os.OpenFile(
+			filepath.Join(homeDir, "seedrush", "wif.txt"), os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0755,
+		)
 		if err != nil {
 			log.Default().Fatalf("Error: %s\n", err.Error())
 		}
@@ -81,8 +84,6 @@ func (a *App) startup(ctx context.Context) {
 	if err != nil {
 		log.Default().Fatalf("Error: %s\n", err.Error())
 	}
-
-	log.Default().Printf("%v\n", a.wallet.WalletUtxos)
 
 	log.Default().Printf("Address: %s\n", a.wallet.WalletAddress.AddressString)
 
@@ -122,6 +123,14 @@ func (a *App) startup(ctx context.Context) {
 								if m.PeerConn == nil {
 									return
 								} else {
+									var t *torrent.Torrent = m.PeerConn.Torrent()
+									if t != nil {
+										state, found := a.torrentsState[t.InfoHash().String()]
+										if found {
+											state.SatoshisEarned += 10
+										}
+									}
+
 									m.PeerConn.ReleaseRequest()
 								}
 							}
@@ -190,6 +199,14 @@ func (a *App) startup(ctx context.Context) {
 								log.Default().Printf("Error: %s\n", extensionError.Error())
 								return
 							}
+
+							var t *torrent.Torrent = m.PeerConn.Torrent()
+							if t != nil {
+								state, found := a.torrentsState[t.InfoHash().String()]
+								if found {
+									state.SatoshisSpend += 10
+								}
+							}
 						}
 
 					default:
@@ -214,9 +231,9 @@ func (a *App) startup(ctx context.Context) {
 		var timer = time.Tick(5 * time.Second)
 
 		for range timer {
-			// a.appStateLocker.RLock()
+			a.appStateLocker.RLock()
 			a.updateStatsLoop()
-			// a.appStateLocker.RUnlock()
+			a.appStateLocker.RUnlock()
 		}
 	}()
 }
@@ -233,19 +250,15 @@ func (a *App) shutdown(ctx context.Context) {
 }
 
 func (a *App) AddMagnet(magnetURI string) error {
-	println("hello")
+	a.appStateLocker.Lock()
+	defer a.appStateLocker.Unlock()
 
-	// a.appStateLocker.Lock()
-	// defer a.appStateLocker.Unlock()
-
-	// a.speedStatsLocker.Lock()
-	// defer a.speedStatsLocker.Unlock()
+	a.speedStatsLocker.Lock()
+	defer a.speedStatsLocker.Unlock()
 
 	if a.client == nil {
 		return fmt.Errorf("torrent client not initialized")
 	}
-
-	println("hello")
 
 	t, err := a.client.AddMagnet(magnetURI)
 	if err != nil {
@@ -278,19 +291,15 @@ func (a *App) AddMagnet(magnetURI string) error {
 }
 
 func (a *App) CreateTorrentFromPath(path string) (*string, error) {
-	println(path)
+	a.appStateLocker.Lock()
+	defer a.appStateLocker.Unlock()
 
-	// a.appStateLocker.Lock()
-	// defer a.appStateLocker.Unlock()
-
-	// a.speedStatsLocker.Lock()
-	// defer a.speedStatsLocker.Unlock()
+	a.speedStatsLocker.Lock()
+	defer a.speedStatsLocker.Unlock()
 
 	if a.client == nil {
 		return nil, fmt.Errorf("torrent client not initialized")
 	}
-
-	println(path)
 
 	var metaInfo metainfo.MetaInfo = metainfo.MetaInfo{
 		AnnounceList: builtinAnnounceList,
@@ -370,8 +379,6 @@ func (a *App) CreateTorrentFromPath(path string) (*string, error) {
 
 	var magnetUrl string = magnetLink.String()
 
-	println(magnetUrl)
-
 	return &magnetUrl, nil
 }
 
@@ -410,6 +417,7 @@ func (a *App) PauseTorrent(infoHash string) error {
 	}
 
 	t.DisallowDataDownload()
+	t.DisallowDataUpload()
 	a.pausedTorrents[infoHash] = true
 	a.saveTorrentsState()
 
@@ -469,40 +477,14 @@ func (a *App) RemoveTorrent(infoHash string, deleteFiles bool) error {
 	return nil
 }
 
-func (a *App) GetStats() Stats {
+func (a *App) GetStats() *Stats {
 	a.appStateLocker.RLock()
 	defer a.appStateLocker.RUnlock()
 
 	a.speedStatsLocker.RLock()
 	defer a.speedStatsLocker.RUnlock()
 
-	var totalDown, totalUp int64
-	var activeTorrents, activePeers int
-
-	for hash := range a.torrents {
-		if tracker, ok := a.downloadSpeeds[hash]; ok {
-			totalDown += tracker.speed
-		}
-
-		if tracker, ok := a.uploadSpeeds[hash]; ok {
-			totalUp += tracker.speed
-		}
-	}
-
-	for hash, t := range a.torrents {
-		if !a.pausedTorrents[hash] && t.BytesCompleted() < t.Length() {
-			activeTorrents++
-		}
-
-		activePeers += t.Stats().ActivePeers
-	}
-
-	return Stats{
-		TotalDownloadSpeed: formatSpeed(totalDown),
-		TotalUploadSpeed:   formatSpeed(totalUp),
-		ActiveTorrents:     activeTorrents,
-		TotalPeers:         activePeers,
-	}
+	return a.getStats()
 }
 
 func (a *App) OpenDownloadFolder() error {
@@ -533,6 +515,21 @@ func (a *App) SelectSeedPath() (string, error) {
 		Title:                      "Select Directory/Packages To Seed",
 		TreatPackagesAsDirectories: true,
 	})
+}
+
+func (a *App) GetWalletState() *WalletState {
+	a.appStateLocker.RLock()
+	defer a.appStateLocker.RUnlock()
+
+	var balance uint64
+	for i := range a.wallet.WalletUtxos {
+		balance += a.wallet.WalletUtxos[i].Satoshis
+	}
+
+	return &WalletState{
+		WalletBalance: balance,
+		WalletAddress: a.wallet.WalletAddress.AddressString,
+	}
 }
 
 func (a *App) saveTorrentsState() {
@@ -593,6 +590,7 @@ func (a *App) loadSavedTorrents() {
 		a.uploadSpeeds[infoHash] = &speedTracker{lastTime: time.Now()}
 
 		a.torrents[infoHash] = t
+		a.torrentsState[infoHash] = &states[i]
 
 		if states[i].IsPaused {
 			a.pausedTorrents[infoHash] = true
@@ -654,23 +652,25 @@ func (a *App) getTorrentInfo(hash string) (*SeedRushTorrentInfo, error) {
 	}
 
 	return &SeedRushTorrentInfo{
-		IsPaused:      isPaused,
-		Peers:         stats.ActivePeers,
-		Seeds:         stats.ConnectedSeeders,
-		DownloadSpeed: downloadSpeed,
-		UploadSpeed:   uploadSpeed,
-		Size:          t.Length(),
-		Progress:      progress,
-		ID:            hash,
-		Name:          t.Name(),
-		InfoHash:      hash,
-		SizeStr:       formatBytes(t.Length()),
-		Status:        a.getTorrentStatus(t, stats, isPaused),
-		DownloadedStr: formatSpeed(downloadSpeed),
-		UploadedStr:   formatSpeed(uploadSpeed),
-		ETA:           eta,
-		Files:         files,
-		UpdatedAt:     time.Now(),
+		IsPaused:       isPaused,
+		Peers:          stats.ActivePeers,
+		Seeds:          stats.ConnectedSeeders,
+		DownloadSpeed:  downloadSpeed,
+		UploadSpeed:    uploadSpeed,
+		Size:           t.Length(),
+		SatoshisSpend:  a.torrentsState[hash].SatoshisSpend,
+		SatoshisEarned: a.torrentsState[hash].SatoshisEarned,
+		Progress:       progress,
+		ID:             hash,
+		Name:           t.Name(),
+		InfoHash:       hash,
+		SizeStr:        formatBytes(t.Length()),
+		Status:         a.getTorrentStatus(t, stats, isPaused),
+		DownloadedStr:  formatSpeed(downloadSpeed),
+		UploadedStr:    formatSpeed(uploadSpeed),
+		ETA:            eta,
+		Files:          files,
+		UpdatedAt:      time.Now(),
 	}, nil
 }
 
@@ -698,6 +698,36 @@ func (a *App) getTorrentStatus(t *torrent.Torrent, stats torrent.TorrentStats, i
 	return "stalled"
 }
 
+func (a *App) getStats() *Stats {
+	var totalDown, totalUp int64
+	var activeTorrents, activePeers int
+
+	for hash := range a.torrents {
+		if tracker, ok := a.downloadSpeeds[hash]; ok {
+			totalDown += tracker.speed
+		}
+
+		if tracker, ok := a.uploadSpeeds[hash]; ok {
+			totalUp += tracker.speed
+		}
+	}
+
+	for hash, t := range a.torrents {
+		if !a.pausedTorrents[hash] && t.BytesCompleted() < t.Length() {
+			activeTorrents++
+		}
+
+		activePeers += t.Stats().ActivePeers
+	}
+
+	return &Stats{
+		TotalDownloadSpeed: formatSpeed(totalDown),
+		TotalUploadSpeed:   formatSpeed(totalUp),
+		ActiveTorrents:     activeTorrents,
+		TotalPeers:         activePeers,
+	}
+}
+
 func (a *App) updateStatsLoop() {
 	for hash, t := range a.torrents {
 		var stats torrent.TorrentStats = t.Stats()
@@ -707,8 +737,7 @@ func (a *App) updateStatsLoop() {
 			elapsed := now.Sub(tracker.lastTime).Seconds()
 			if elapsed > 0 {
 				currentBytes := stats.BytesReadData.Int64()
-				bytesDiff := currentBytes - tracker.lastBytes
-				tracker.speed = int64(float64(bytesDiff) / elapsed)
+				tracker.speed = int64(float64(currentBytes-tracker.lastBytes) / elapsed)
 				tracker.lastBytes = currentBytes
 				tracker.lastTime = now
 			}
@@ -718,8 +747,7 @@ func (a *App) updateStatsLoop() {
 			elapsed := now.Sub(tracker.lastTime).Seconds()
 			if elapsed > 0 {
 				currentBytes := stats.BytesWrittenData.Int64()
-				bytesDiff := currentBytes - tracker.lastBytes
-				tracker.speed = int64(float64(bytesDiff) / elapsed)
+				tracker.speed = int64(float64(currentBytes-tracker.lastBytes) / elapsed)
 				tracker.lastBytes = currentBytes
 				tracker.lastTime = now
 			}
@@ -739,7 +767,7 @@ func (a *App) updateStatsLoop() {
 	a.lastUpdateTime = time.Now()
 	wailsruntime.EventsEmit(a.ctx, "torrents-update", map[string]interface{}{
 		"torrents": torrents,
-		"stats":    a.GetStats(),
+		"stats":    a.getStats(),
 	})
 }
 

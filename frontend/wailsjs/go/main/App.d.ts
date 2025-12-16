@@ -12,6 +12,8 @@ export function GetTorrent(arg1:string):Promise<main.SeedRushTorrentInfo>;
 
 export function GetTorrents():Promise<Array<main.SeedRushTorrentInfo>>;
 
+export function GetWalletState():Promise<main.WalletState>;
+
 export function OpenDownloadFolder():Promise<void>;
 
 export function PauseTorrent(arg1:string):Promise<void>;

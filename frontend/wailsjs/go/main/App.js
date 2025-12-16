@@ -49,3 +49,7 @@ export function ResumeTorrent(arg1) {
 export function SelectSeedPath() {
   return window['go']['main']['App']['SelectSeedPath']();
 }
+
+export function WalletSync() {
+  return window['go']['main']['App']['WalletSync']();
+}

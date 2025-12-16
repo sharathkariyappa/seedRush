@@ -66,6 +66,11 @@ type TorrentState struct {
 	UpdatedAt      time.Time `json:"updatedAt"`
 }
 
+type TorrentFundState struct {
+	SatoshisSpend  uint64 `json:"satoshisSpend"`
+	SatoshisEarned uint64 `json:"satoshisEarned"`
+}
+
 type App struct {
 	piecesDir        string
 	downloadDir      string
@@ -80,7 +85,7 @@ type App struct {
 	lastUpdateTime   time.Time
 	pausedTorrents   map[string]bool
 	torrents         map[string]*torrent.Torrent
-	torrentsState    map[string]*TorrentState
+	torrentsState    map[string]*TorrentFundState
 	downloadSpeeds   map[string]*speedTracker
 	uploadSpeeds     map[string]*speedTracker
 }

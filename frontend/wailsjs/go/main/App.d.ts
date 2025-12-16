@@ -25,3 +25,5 @@ export function RequestFunds(arg1:number):Promise<void>;
 export function ResumeTorrent(arg1:string):Promise<void>;
 
 export function SelectSeedPath():Promise<string>;
+
+export function WalletSync():Promise<void>;

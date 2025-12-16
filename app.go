@@ -28,7 +28,7 @@ func NewApp() *App {
 	return &App{
 		broadcaster:    broadcaster.NewBroadcaster(),
 		torrents:       make(map[string]*torrent.Torrent),
-		torrentsState:  make(map[string]*TorrentState),
+		torrentsState:  make(map[string]*TorrentFundState),
 		downloadSpeeds: make(map[string]*speedTracker),
 		uploadSpeeds:   make(map[string]*speedTracker),
 		pausedTorrents: make(map[string]bool),
@@ -250,12 +250,6 @@ func (a *App) shutdown(ctx context.Context) {
 }
 
 func (a *App) AddMagnet(magnetURI string) error {
-	a.appStateLocker.Lock()
-	defer a.appStateLocker.Unlock()
-
-	a.speedStatsLocker.Lock()
-	defer a.speedStatsLocker.Unlock()
-
 	if a.client == nil {
 		return fmt.Errorf("torrent client not initialized")
 	}
@@ -265,25 +259,30 @@ func (a *App) AddMagnet(magnetURI string) error {
 		return fmt.Errorf("failed to add magnet: %w", err)
 	}
 
-	<-t.GotInfo()
-
-	var infoHash string = t.InfoHash().String()
-
-	a.downloadSpeeds[infoHash] = &speedTracker{lastTime: time.Now()}
-	a.uploadSpeeds[infoHash] = &speedTracker{lastTime: time.Now()}
-
-	a.torrents[infoHash] = t
-
-	a.saveTorrentsState()
-
-	wailsruntime.EventsEmit(a.ctx, "torrent-added", infoHash)
-
 	go func() {
+		<-t.GotInfo()
+
+		a.appStateLocker.Lock()
+		defer a.appStateLocker.Unlock()
+
+		a.speedStatsLocker.Lock()
+		defer a.speedStatsLocker.Unlock()
+
+		var infoHash string = t.InfoHash().String()
+
+		a.downloadSpeeds[infoHash] = &speedTracker{lastTime: time.Now()}
+		a.uploadSpeeds[infoHash] = &speedTracker{lastTime: time.Now()}
+
+		a.torrents[infoHash] = t
+
+		a.saveTorrentsState()
+
 		t.AllowDataDownload()
 		t.AllowDataUpload()
 		t.DownloadAll()
+		t.Seeding()
 
-		wailsruntime.EventsEmit(a.ctx, "torrent-updated", infoHash)
+		wailsruntime.EventsEmit(a.ctx, "torrents-updated")
 	}()
 
 	return nil
@@ -305,17 +304,12 @@ func (a *App) CreateTorrentFromPath(path string) (*string, error) {
 		CreationDate: time.Now().Unix(),
 	}
 
-	totalLength, err := totalLength(path)
-	if err != nil {
-		return nil, err
-	}
-
 	var info = metainfo.Info{
-		PieceLength: metainfo.ChoosePieceLength(totalLength),
+		PieceLength: 64 * DATA_UNIT,
 		Name:        path,
 	}
 
-	err = info.BuildFromFilePath(path)
+	err := info.BuildFromFilePath(path)
 	if err != nil {
 		return nil, err
 	}
@@ -370,7 +364,7 @@ func (a *App) CreateTorrentFromPath(path string) (*string, error) {
 
 	a.saveTorrentsState()
 
-	wailsruntime.EventsEmit(a.ctx, "torrent-added", infoHash)
+	wailsruntime.EventsEmit(a.ctx, "torrents-updated")
 
 	magnetLink, err := metaInfo.MagnetV2()
 	if err != nil {
@@ -436,11 +430,33 @@ func (a *App) ResumeTorrent(infoHash string) error {
 		return fmt.Errorf("torrent not found")
 	}
 
-	t.AllowDataDownload()
-	t.DownloadAll()
-	a.saveTorrentsState()
-
 	delete(a.pausedTorrents, infoHash)
+
+	go func() {
+		<-t.GotInfo()
+
+		a.appStateLocker.Lock()
+		defer a.appStateLocker.Unlock()
+
+		a.speedStatsLocker.Lock()
+		defer a.speedStatsLocker.Unlock()
+
+		var infoHash string = t.InfoHash().String()
+
+		a.downloadSpeeds[infoHash] = &speedTracker{lastTime: time.Now()}
+		a.uploadSpeeds[infoHash] = &speedTracker{lastTime: time.Now()}
+
+		a.torrents[infoHash] = t
+
+		t.AllowDataDownload()
+		t.AllowDataUpload()
+		t.DownloadAll()
+		t.Seeding()
+
+		a.saveTorrentsState()
+
+		wailsruntime.EventsEmit(a.ctx, "torrents-updated")
+	}()
 
 	return nil
 }
@@ -457,20 +473,18 @@ func (a *App) RemoveTorrent(infoHash string, deleteFiles bool) error {
 		return fmt.Errorf("torrent not found")
 	}
 
-	delete(a.torrents, infoHash)
-	delete(a.pausedTorrents, infoHash)
-
 	t.DisallowDataDownload()
 	t.DisallowDataUpload()
 
+	delete(a.torrents, infoHash)
+	delete(a.pausedTorrents, infoHash)
 	delete(a.downloadSpeeds, infoHash)
 	delete(a.uploadSpeeds, infoHash)
+	delete(a.torrentsState, infoHash)
 
 	if deleteFiles && t.Info() != nil {
 		for _, file := range t.Files() {
-			err := os.Remove(filepath.Join(a.downloadDir, file.Path()))
-			if err != nil {
-			}
+			os.Remove(filepath.Join(a.downloadDir, file.Path()))
 		}
 	}
 
@@ -535,6 +549,13 @@ func (a *App) GetWalletState() *WalletState {
 	}
 }
 
+func (a *App) WalletSync() error {
+	a.walletLocker.Lock()
+	defer a.walletLocker.Unlock()
+
+	return a.wallet.Sync()
+}
+
 func (a *App) RequestFunds(amount uint64) error {
 	a.walletLocker.Lock()
 	defer a.walletLocker.Unlock()
@@ -560,8 +581,6 @@ func (a *App) RequestFunds(amount uint64) error {
 		return err
 	}
 
-	log.Default().Printf("Txid: %s\n", actionResult.Txid.String())
-
 	a.wallet.WalletUtxos = append(a.wallet.WalletUtxos, UTXO{
 		Vout:     0,
 		Satoshis: amount,
@@ -577,26 +596,33 @@ func (a *App) saveTorrentsState() {
 		var magnetURI string
 		if t.Info() != nil {
 			var metaInfo = t.Metainfo()
-			magnetLink, _ := metaInfo.MagnetV2()
+			magnetLink, err := metaInfo.MagnetV2()
+			if err != nil {
+				continue
+			}
+
 			magnetURI = magnetLink.String()
 		}
 
-		_, found := a.torrentsState[hash]
-		if !found {
-			a.torrentsState[hash] = new(TorrentState)
+		existingState, found := a.torrentsState[hash]
+		if found {
+			states = append(states, TorrentState{
+				IsPaused:       a.pausedTorrents[hash],
+				SatoshisEarned: existingState.SatoshisEarned,
+				SatoshisSpend:  existingState.SatoshisSpend,
+				InfoHash:       hash,
+				MagnetURI:      magnetURI,
+				UpdatedAt:      time.Now(),
+			})
+		} else {
+			a.torrentsState[hash] = new(TorrentFundState)
+			states = append(states, TorrentState{
+				IsPaused:  a.pausedTorrents[hash],
+				InfoHash:  hash,
+				MagnetURI: magnetURI,
+				UpdatedAt: time.Now(),
+			})
 		}
-
-		var state = TorrentState{
-			IsPaused:       a.pausedTorrents[hash],
-			SatoshisEarned: a.torrentsState[hash].SatoshisEarned,
-			SatoshisSpend:  a.torrentsState[hash].SatoshisSpend,
-			InfoHash:       hash,
-			MagnetURI:      magnetURI,
-			UpdatedAt:      time.Now(),
-		}
-
-		states = append(states, state)
-		a.torrentsState[hash] = &state
 	}
 
 	data, err := json.Marshal(&states)
@@ -639,7 +665,10 @@ func (a *App) loadSavedTorrents() {
 		a.uploadSpeeds[infoHash] = &speedTracker{lastTime: time.Now()}
 
 		a.torrents[infoHash] = t
-		a.torrentsState[infoHash] = &states[i]
+		a.torrentsState[infoHash] = &TorrentFundState{
+			SatoshisEarned: states[i].SatoshisEarned,
+			SatoshisSpend:  states[i].SatoshisSpend,
+		}
 
 		if states[i].IsPaused {
 			a.pausedTorrents[infoHash] = true
@@ -649,6 +678,7 @@ func (a *App) loadSavedTorrents() {
 				t.AllowDataDownload()
 				t.AllowDataUpload()
 				t.DownloadAll()
+				t.Seeding()
 			}()
 		}
 	}
@@ -803,21 +833,8 @@ func (a *App) updateStatsLoop() {
 		}
 	}
 
-	var torrents []*SeedRushTorrentInfo
-	for hash := range a.torrents {
-		info, err := a.getTorrentInfo(hash)
-		if err != nil {
-			return
-		}
-
-		torrents = append(torrents, info)
-	}
-
 	a.lastUpdateTime = time.Now()
-	wailsruntime.EventsEmit(a.ctx, "torrents-update", map[string]interface{}{
-		"torrents": torrents,
-		"stats":    a.getStats(),
-	})
+	wailsruntime.EventsEmit(a.ctx, "torrents-updated")
 }
 
 func formatBytes(bytes int64) string {

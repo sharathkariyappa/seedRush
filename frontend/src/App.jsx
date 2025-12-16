@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Play, Pause, Trash2, Plus, Download, Upload, Users, Settings, FolderOpen, Link, Search, X, FileUp, Clock, HardDrive, Check, AlertCircle, Copy, DollarSign, Wallet, RefreshCw, History } from 'lucide-react';
-import { AddMagnet, GetTorrents, GetStats, PauseTorrent, ResumeTorrent, RemoveTorrent, OpenDownloadFolder } from '../wailsjs/go/main/App';
+import { AddMagnet, GetTorrents, GetStats, PauseTorrent, ResumeTorrent, RemoveTorrent, OpenDownloadFolder, GetWalletState } from '../wailsjs/go/main/App';
 import { EventsOff, EventsOn } from '../wailsjs/runtime/runtime';
 import { SelectSeedPath } from '../wailsjs/go/main/App';
-import { CreateTorrentFromPath } from '../wailsjs/go/main/App';
+import { CreateTorrentFromPath, RequestFunds } from '../wailsjs/go/main/App';
 
 const TorrentClient = () => {
   const [torrents, setTorrents] = useState([]);
@@ -50,6 +50,11 @@ const TorrentClient = () => {
     };
     
     loadTorrents();
+    GetWalletState().then(wallet => {
+      if (mounted) {
+        setWalletInfo(wallet);
+      }
+    });
     
     EventsOn('torrents-update', handleTorrentsUpdate);
     EventsOn('torrent-added', handleTorrentAdded);
@@ -60,6 +65,9 @@ const TorrentClient = () => {
       EventsOff('torrent-added', handleTorrentAdded);
     };
   }, []);
+
+  // console.log(walletInfo);
+  // console.log(torrents);
 
   const DEMO_WALLET = {
     address: "1FfmbHfnpaZjKFvyi1okTjJJusN455paPH",
@@ -112,7 +120,7 @@ const TorrentClient = () => {
 
   const handleViewWallet = async () => {
     try {
-      setWalletInfo(DEMO_WALLET);
+      setWalletInfo(walletInfo || DEMO_WALLET);
       setTxHistory(DEMO_TX_HISTORY);
       setShowWalletModal(true);
     } catch {
@@ -123,7 +131,7 @@ const TorrentClient = () => {
   
   const handleViewEarnings = async () => {
     try {
-      setEarnings(DEMO_EARNINGS);
+      setEarnings(torrents.satoshisEarned ? DEMO_EARNINGS : []);
       setShowEarningsModal(true);
     } catch {
       setError("Failed to load earnings");
@@ -133,7 +141,7 @@ const TorrentClient = () => {
 
   const handleViewSpent = async () => {
     try {
-      setSpent(DEMO_SPENT);
+      setSpent(torrents.satoshisSpend ? DEMO_SPENT : []);
       setShowSpentsModal(true);
     } catch {
       setError("Failed to load earnings");
@@ -141,14 +149,21 @@ const TorrentClient = () => {
     }
   };
 
-  const handleRequestPayment = () => {
-    alert("Requesting payment");
+  const handleRequestPayment = async () => {
+    // const bsv = (amountToRequest);
+    if (!amountToRequest || amountToRequest <= 0) return;
+  
+    // const satoshis = Math.floor(bsv * 100_000_000);
+    console.log('Requesting funds:', amountToRequest, 'satoshis');
+    await RequestFunds(satoshis);
+  
+    setAmountToRequest("");
   };
   
 const handleRefreshBalance = async () => {
     try {
       setLoading(true);
-      setWalletInfo(DEMO_WALLET);
+      setWalletInfo(await GetWalletState());
     } catch (err) {
       setError('Failed to refresh balance');
       setTimeout(() => setError(''), 3000);
@@ -964,7 +979,7 @@ const handleRefreshBalance = async () => {
               <div className="flex justify-between items-center p-3 bg-[#0E1F2D] rounded-lg border border-white/5">
                 <span className="text-gray-400">Address</span>
                 <div className="flex items-center gap-2">
-                  <code className="text-xs font-mono">{walletInfo.address}...</code>
+                  <code className="text-xs font-mono">{walletInfo.address}</code>
                   <button onClick={() => copyToClipboard(walletInfo.address)} className="p-1 hover:bg-white/10 rounded">
                     <Copy className="w-3 h-3" />
                   </button>
@@ -972,7 +987,7 @@ const handleRefreshBalance = async () => {
               </div>
               <div className="flex justify-between p-3 bg-[#0E1F2D] rounded-lg border border-white/5">
                 <span className="text-gray-400">Balance</span>
-                <span className="font-medium text-green-400">{walletInfo.balance} BSV</span>
+                <span className="font-medium text-green-400">{walletInfo.balance} sats</span>
               </div>
               <button onClick={handleRefreshBalance} disabled={loading} className="w-full bg-[#06E7ED] hover:bg-[#05CDD3] text-[#081B2A] rounded-lg py-2 font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2">
                 <RefreshCw className="w-4 h-4" />
@@ -981,7 +996,7 @@ const handleRefreshBalance = async () => {
               <div className="flex gap-2">
                 <input
                   type="text"
-                  placeholder="Enter amount in BSV"
+                  placeholder="Enter amount in sats"
                   value={amountToRequest}
                   onChange={(e) => setAmountToRequest(e.target.value)}
                   className="flex-1 bg-[#0E1F2D] border border-white/5 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-[#06E7ED]"

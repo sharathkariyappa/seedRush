@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"seedrush/broadcaster"
+	"strings"
 	"time"
 
 	"github.com/bsv-blockchain/go-sdk/transaction"
@@ -182,6 +183,8 @@ func (a *App) startup(ctx context.Context) {
 								a.wallet.WalletUtxos = []UTXO{
 									{1, (totalInputAmount - totalSpentAmount), microTransaction.TxID().String()},
 								}
+
+								wailsruntime.EventsEmit(a.ctx, "wallet-updated")
 							}
 
 							log.Default().Printf("Txid: %s\n", microTransaction.TxID().String())
@@ -299,16 +302,29 @@ func (a *App) CreateTorrentFromPath(path string) (*string, error) {
 		return nil, fmt.Errorf("torrent client not initialized")
 	}
 
+	err := os.CopyFS(a.downloadDir, os.DirFS(path))
+	if err != nil {
+		return nil, err
+	}
+
 	var metaInfo metainfo.MetaInfo = metainfo.MetaInfo{
+		AnnounceList: builtinAnnounceList,
 		CreationDate: time.Now().Unix(),
 	}
+
+	splitted := strings.Split(path, string(filepath.Separator))
+	if len(splitted) < 1 {
+		return nil, errors.New("invalid path")
+	}
+
+	path = filepath.Join(a.downloadDir, splitted[len(splitted)-1])
 
 	var info = metainfo.Info{
 		PieceLength: 64 * DATA_UNIT,
 		Name:        path,
 	}
 
-	err := info.BuildFromFilePath(path)
+	err = info.BuildFromFilePath(path)
 	if err != nil {
 		return nil, err
 	}
@@ -327,7 +343,7 @@ func (a *App) CreateTorrentFromPath(path string) (*string, error) {
 		InfoBytes: metaInfo.InfoBytes,
 		InfoHash:  metaInfo.HashInfoBytes(),
 		Storage: storage.NewFileOpts(storage.NewFileClientOpts{
-			ClientBaseDir: path,
+			ClientBaseDir: a.downloadDir,
 			FilePathMaker: func(opts storage.FilePathMakerOpts) string {
 				return filepath.Join(opts.File.Path...)
 			},
@@ -639,7 +655,29 @@ func (a *App) loadSavedTorrents() {
 	}
 
 	for i := range states {
-		t, err := a.client.AddMagnet(states[i].MagnetURI)
+		torrentSpec, err := torrent.TorrentSpecFromMagnetUri(states[i].MagnetURI)
+		if err != nil {
+			log.Default().Printf("Error: %s\n", err.Error())
+			continue
+		}
+
+		pieceInformationStorage, err := storage.NewDefaultPieceCompletionForDir(a.piecesDir)
+		if err != nil {
+			continue
+		}
+
+		torrentSpec.Trackers = builtinAnnounceList
+		torrentSpec.AddTorrentOpts = torrent.AddTorrentOpts{
+			Storage: storage.NewFileOpts(storage.NewFileClientOpts{
+				ClientBaseDir: a.downloadDir,
+				FilePathMaker: func(opts storage.FilePathMakerOpts) string {
+					return filepath.Join(opts.File.Path...)
+				},
+				PieceCompletion: pieceInformationStorage,
+			}),
+		}
+
+		t, _, err := a.client.AddTorrentSpec(torrentSpec)
 		if err != nil {
 			log.Default().Printf("Error: %s\n", err.Error())
 			continue

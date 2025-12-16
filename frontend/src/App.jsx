@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Play, Pause, Trash2, Plus, Download, Upload, Users, Settings, FolderOpen, Link, Search, X, FileUp, Clock, HardDrive, Check, AlertCircle, Copy } from 'lucide-react';
+import { Play, Pause, Trash2, Plus, Download, Upload, Users, Settings, FolderOpen, Link, Search, X, FileUp, Clock, HardDrive, Check, AlertCircle, Copy, DollarSign, Wallet, RefreshCw, History } from 'lucide-react';
 import { AddMagnet, GetTorrents, GetStats, PauseTorrent, ResumeTorrent, RemoveTorrent, OpenDownloadFolder } from '../wailsjs/go/main/App';
 import { EventsOff, EventsOn } from '../wailsjs/runtime/runtime';
 import { SelectSeedPath } from '../wailsjs/go/main/App';
@@ -24,6 +24,11 @@ const TorrentClient = () => {
   const [error, setError] = useState('');
   const [generatedMagnetLink, setGeneratedMagnetLink] = useState('');
   const [confirmDialog, setConfirmDialog] = useState(null);
+  const [showWalletModal, setShowWalletModal] = useState(false);
+  const [showEarningsModal, setShowEarningsModal] = useState(false);
+  const [txHistory, setTxHistory] = useState([]);
+  const [earnings, setEarnings] = useState([]);
+  const [walletInfo, setWalletInfo] = useState(null);
 
   useEffect(() => {
     let mounted = true;
@@ -52,6 +57,76 @@ const TorrentClient = () => {
       EventsOff('torrent-added', handleTorrentAdded);
     };
   }, []);
+
+  const DEMO_WALLET = {
+    address: "1FfmbHfnpaZjKFvyi1okTjJJusN455paPH",
+    balance: 12.345,
+  };
+  
+  const DEMO_TX_HISTORY = [
+    {
+      type: "RECEIVE",
+      amount: 1.25,
+      txid: "a3f1b8d9c24f91e9d7ab1234567890abcdef",
+    },
+    {
+      type: "SEND",
+      amount: -0.5,
+      txid: "b9d21c7a8e34f92abcde567890123456789",
+    },
+    {
+      type: "REWARD",
+      amount: 0.75,
+      txid: "c8e9f123ab4567890123456789abcdef",
+    },
+  ];
+  
+  const DEMO_EARNINGS = [
+    {
+      torrentName: "Ubuntu 22.04 ISO",
+      torrentHash: "8d3f9a1c7b2e4f6a9c0d",
+      amount: 3.2,
+    },
+    {
+      torrentName: "Open Source Movie",
+      torrentHash: "f1a9b8c7d6e5a4321098",
+      amount: 1.8,
+    },
+  ];
+  
+
+  const handleViewWallet = async () => {
+    try {
+      setWalletInfo(DEMO_WALLET);
+      setTxHistory(DEMO_TX_HISTORY);
+      setShowWalletModal(true);
+    } catch {
+      setError("Failed to load wallet details");
+      setTimeout(() => setError(""), 3000);
+    }
+  };
+  
+  const handleViewEarnings = async () => {
+    try {
+      setEarnings(DEMO_EARNINGS);
+      setShowEarningsModal(true);
+    } catch {
+      setError("Failed to load earnings");
+      setTimeout(() => setError(""), 3000);
+    }
+  };
+  
+const handleRefreshBalance = async () => {
+    try {
+      setLoading(true);
+      setWalletInfo(DEMO_WALLET);
+    } catch (err) {
+      setError('Failed to refresh balance');
+      setTimeout(() => setError(''), 3000);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadTorrents = async () => {
     try {
@@ -248,15 +323,13 @@ const TorrentClient = () => {
       {/* Top Bar */}
       <div className="bg-[#0E1F2D] px-6 py-4 border-b border-white/5">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-[#06E7ED]/10 flex items-center justify-center">
-              <img src="/loogo.png" alt="SeedRush Logo" className="w-10 h-10 rounded-md" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-white">SeedRush</h1>
-              <p className="text-xs text-gray-400">Earn while you seed</p>
-            </div>
-          </div>
+        <div className="flex flex-col gap-1">
+          <img
+            src="/Full_logo_Dark.svg"
+            alt="SeedRush Logo"
+            className="w-28 h-auto"
+          />
+        </div>
 
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-4 px-4 py-2 bg-[#081B2A]/50 rounded-lg border border-white/5">
@@ -270,6 +343,16 @@ const TorrentClient = () => {
                 <span className="text-sm font-medium">{stats.totalUpload}</span>
               </div>
             </div>
+
+            <button onClick={handleViewEarnings} className="px-4 py-2 bg-green-500/10 hover:bg-green-500/20 text-green-300 rounded-lg transition-all flex items-center gap-2 text-sm font-medium border border-green-500/20">
+              <DollarSign className="w-4 h-4" />
+              ${earnings.reduce((sum, e) => sum + e.amount, 0)}
+            </button>
+
+            <button onClick={handleViewWallet} className="px-4 py-2 bg-[#06E7ED]/10 hover:bg-[#06E7ED]/20 text-[#06E7ED] rounded-lg transition-all flex items-center gap-2 text-sm font-medium border border-[#06E7ED]/20">
+              <Wallet className="w-4 h-4" />
+              Wallet
+            </button>
 
             <button 
               onClick={handleOpenFolder}
@@ -347,6 +430,10 @@ const TorrentClient = () => {
               <div className="flex justify-between">
                 <span className="text-gray-400">Total Peers</span>
                 <span className="font-medium text-[#06E7ED]">{stats.totalPeers}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Earned</span>
+                <span className="font-medium text-green-400">${earnings.reduce((sum, e) => sum + e.amount, 0)}</span>
               </div>
             </div>
           </div>
@@ -813,6 +900,84 @@ const TorrentClient = () => {
                 {confirmDialog.deleteFiles ? 'Remove & Delete Files' : 'Remove Torrent'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Wallet Modal */}
+      {showWalletModal && walletInfo && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#0C2437] rounded-2xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto">
+            <h2 className="mb-4 text-lg font-bold text-white">Wallet Details</h2>
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between items-center p-3 bg-[#0E1F2D] rounded-lg border border-white/5">
+                <span className="text-gray-400">Address</span>
+                <div className="flex items-center gap-2">
+                  <code className="text-xs font-mono">{walletInfo.address}...</code>
+                  <button onClick={() => copyToClipboard(walletInfo.address)} className="p-1 hover:bg-white/10 rounded">
+                    <Copy className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+              <div className="flex justify-between p-3 bg-[#0E1F2D] rounded-lg border border-white/5">
+                <span className="text-gray-400">Balance</span>
+                <span className="font-medium text-green-400">{walletInfo.balance} BSV</span>
+              </div>
+              <button onClick={handleRefreshBalance} disabled={loading} className="w-full bg-[#06E7ED] hover:bg-[#05CDD3] text-[#081B2A] rounded-lg py-2 font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+                <RefreshCw className="w-4 h-4" />
+                Refresh Balance
+              </button>
+            </div>
+
+            <h3 className="mt-6 mb-3 font-semibold text-gray-400 flex items-center gap-2">
+              <History className="w-4 h-4" />
+              Transaction History
+            </h3>
+            <div className="space-y-2">
+              {txHistory.length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-4">No transactions yet</p>
+              ) : (
+                txHistory.map((tx, idx) => (
+                  <div key={idx} className="flex justify-between items-center p-3 bg-[#0E1F2D] rounded-lg border border-white/5 text-xs">
+                    <span className="font-medium text-gray-300">{txHistory.type}</span>
+                    <span className={tx.amount > 0 ? 'text-green-400' : 'text-red-400'}>{tx.amount > 0 ? '+' : ''}{tx.amount} BSV</span>
+                    <code className="text-gray-500">{tx.txid?.substring(0, 12)}...</code>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <button onClick={() => setShowWalletModal(false)} className="mt-4 w-full py-2 rounded-lg text-sm text-gray-400 hover:text-white transition-all">Close</button>
+          </div>
+        </div>
+      )}
+
+      {/* Earnings Modal */}
+      {showEarningsModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#0C2437] rounded-2xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto">
+            <h2 className="mb-4 text-lg font-bold text-white flex items-center gap-2">
+              <DollarSign className="w-5 h-5 text-green-400" />
+              Earnings
+            </h2>
+            {earnings.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-8">No earnings yet. Start seeding torrents to earn BSV!</p>
+            ) : (
+              <div className="space-y-2">
+                {earnings.map((e, idx) => (
+                  <div key={idx} className="p-3 bg-[#0E1F2D] rounded-lg flex justify-between items-center text-sm border border-white/5">
+                    <div className="flex-1 min-w-0 mr-3">
+                      <p className="truncate font-medium text-white">{e.torrentName}</p>
+                      <p className="text-xs text-gray-500 truncate">{e.torrentHash}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-green-400">{e.amount} BSV</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button onClick={() => setShowEarningsModal(false)} className="mt-4 w-full py-2 rounded-lg text-sm text-gray-400 hover:text-white transition-all">Close</button>
           </div>
         </div>
       )}

@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/bsv-blockchain/go-sdk/transaction"
+	"github.com/bsv-blockchain/go-sdk/wallet"
+	"github.com/bsv-blockchain/go-sdk/wallet/substrates"
 	"github.com/timechainlabs/torrent"
 	"github.com/timechainlabs/torrent/bencode"
 	"github.com/timechainlabs/torrent/metainfo"
@@ -138,6 +140,9 @@ func (a *App) startup(ctx context.Context) {
 
 					case "REQUEST":
 						{
+							a.walletLocker.Lock()
+							defer a.walletLocker.Unlock()
+
 							var microTransaction *transaction.Transaction
 							microTransaction, extensionError = transaction.NewTransactionFromHex(microPayRequest.Txhex)
 							if extensionError != nil {
@@ -518,8 +523,8 @@ func (a *App) SelectSeedPath() (string, error) {
 }
 
 func (a *App) GetWalletState() *WalletState {
-	a.appStateLocker.RLock()
-	defer a.appStateLocker.RUnlock()
+	a.walletLocker.RLock()
+	defer a.walletLocker.RUnlock()
 
 	var balance uint64
 	for i := range a.wallet.WalletUtxos {
@@ -530,6 +535,41 @@ func (a *App) GetWalletState() *WalletState {
 		WalletBalance: balance,
 		WalletAddress: a.wallet.WalletAddress.AddressString,
 	}
+}
+
+func (a *App) RequestFunds(amount uint64) error {
+	a.walletLocker.Lock()
+	defer a.walletLocker.Unlock()
+
+	var brc100Wallet = substrates.NewHTTPWalletJSON("https://seedrush.online", "http://localhost:3321", nil)
+	if brc100Wallet == nil {
+		return errors.New("bsv wallet not found")
+	}
+
+	actionResult, err := brc100Wallet.CreateAction(context.Background(), wallet.CreateActionArgs{
+		Description: "TopUp Seedrush Wallet",
+		Outputs: []wallet.CreateActionOutput{
+			wallet.CreateActionOutput{
+				Satoshis:      amount,
+				LockingScript: a.wallet.LockingScript.Bytes(),
+				Tags:          []string{"SEEDRUSH"},
+			},
+		},
+		Labels: []string{"SEEDRUSH"},
+	})
+	if err != nil {
+		return err
+	}
+
+	log.Default().Printf("Txid: %s\n", actionResult.Txid.String())
+
+	a.wallet.WalletUtxos = append(a.wallet.WalletUtxos, UTXO{
+		Vout:     0,
+		Satoshis: amount,
+		Txid:     actionResult.Txid.String(),
+	})
+
+	return nil
 }
 
 func (a *App) saveTorrentsState() {

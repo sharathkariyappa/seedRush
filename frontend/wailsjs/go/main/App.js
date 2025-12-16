@@ -38,6 +38,10 @@ export function RemoveTorrent(arg1, arg2) {
   return window['go']['main']['App']['RemoveTorrent'](arg1, arg2);
 }
 
+export function RequestFunds(arg1) {
+  return window['go']['main']['App']['RequestFunds'](arg1);
+}
+
 export function ResumeTorrent(arg1) {
   return window['go']['main']['App']['ResumeTorrent'](arg1);
 }

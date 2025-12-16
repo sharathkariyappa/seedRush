@@ -76,7 +76,7 @@ func (a *App) startup(ctx context.Context) {
 			log.Default().Fatalf("Error: %s\n", err.Error())
 		}
 	} else {
-		a.wallet, err = loadWallet(filepath.Join(homeDir, "wif.txt"))
+		a.wallet, err = loadWallet(filepath.Join(homeDir, "seedrush", "wif.txt"))
 		if err != nil {
 			log.Default().Fatalf("Error: %s\n", err.Error())
 		}
@@ -390,6 +390,9 @@ func (a *App) CreateTorrentFromPath(path string) (*string, error) {
 func (a *App) GetTorrents() ([]*SeedRushTorrentInfo, error) {
 	a.appStateLocker.RLock()
 	defer a.appStateLocker.RUnlock()
+
+	a.speedStatsLocker.RLock()
+	defer a.speedStatsLocker.RUnlock()
 
 	var torrents []*SeedRushTorrentInfo
 	for hash := range a.torrents {

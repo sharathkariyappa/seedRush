@@ -103,10 +103,6 @@ func loadWallet(path string) (*FullWallet, error) {
 }
 
 func (w *FullWallet) Sync() error {
-	if time.Since(w.LastSync) < (5 * time.Minute) {
-		return nil
-	}
-
 	utxosRequest, err := http.NewRequest(
 		http.MethodGet,
 		"https://api.bitails.io/address/"+w.WalletAddress.AddressString+"/unspent?limit=1000",
@@ -130,6 +126,8 @@ func (w *FullWallet) Sync() error {
 	if err != nil {
 		return err
 	}
+
+	log.Default().Printf("%v\n", utxosResponse.Utxos)
 
 	w.WalletUtxos = utxosResponse.Utxos
 

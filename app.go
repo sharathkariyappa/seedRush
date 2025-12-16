@@ -228,12 +228,12 @@ func (a *App) startup(ctx context.Context) {
 	a.loadSavedTorrents()
 
 	go func() {
-		var timer = time.Tick(5 * time.Second)
+		var timer = time.Tick(10 * time.Second)
 
 		for range timer {
-			a.appStateLocker.Lock()
+			a.speedStatsLocker.Lock()
 			a.updateStatsLoop()
-			a.appStateLocker.Unlock()
+			a.speedStatsLocker.Unlock()
 		}
 	}()
 }
@@ -265,6 +265,8 @@ func (a *App) AddMagnet(magnetURI string) error {
 		return fmt.Errorf("failed to add magnet: %w", err)
 	}
 
+	<-t.GotInfo()
+
 	var infoHash string = t.InfoHash().String()
 
 	a.downloadSpeeds[infoHash] = &speedTracker{lastTime: time.Now()}
@@ -272,17 +274,14 @@ func (a *App) AddMagnet(magnetURI string) error {
 
 	a.torrents[infoHash] = t
 
+	a.saveTorrentsState()
+
 	wailsruntime.EventsEmit(a.ctx, "torrent-added", infoHash)
 
 	go func() {
-		<-t.GotInfo()
 		t.AllowDataDownload()
 		t.AllowDataUpload()
 		t.DownloadAll()
-
-		a.appStateLocker.RLock()
-		a.saveTorrentsState()
-		a.appStateLocker.RUnlock()
 
 		wailsruntime.EventsEmit(a.ctx, "torrent-updated", infoHash)
 	}()
@@ -582,10 +581,12 @@ func (a *App) saveTorrentsState() {
 		}
 
 		states = append(states, TorrentState{
-			IsPaused:  a.pausedTorrents[hash],
-			InfoHash:  hash,
-			MagnetURI: magnetURI,
-			UpdatedAt: time.Now(),
+			IsPaused:       a.pausedTorrents[hash],
+			SatoshisEarned: a.torrentsState[hash].SatoshisEarned,
+			SatoshisSpend:  a.torrentsState[hash].SatoshisSpend,
+			InfoHash:       hash,
+			MagnetURI:      magnetURI,
+			UpdatedAt:      time.Now(),
 		})
 	}
 

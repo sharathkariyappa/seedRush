@@ -3,7 +3,7 @@ import { Play, Pause, Trash2, Plus, Download, Upload, Users, Settings, FolderOpe
 import { AddMagnet, GetTorrents, GetStats, PauseTorrent, ResumeTorrent, RemoveTorrent, OpenDownloadFolder, GetWalletState } from '../wailsjs/go/main/App';
 import { EventsOff, EventsOn } from '../wailsjs/runtime/runtime';
 import { SelectSeedPath } from '../wailsjs/go/main/App';
-import { CreateTorrentFromPath, RequestFunds } from '../wailsjs/go/main/App';
+import { CreateTorrentFromPath, RequestFunds, WalletSync } from '../wailsjs/go/main/App';
 
 const TorrentClient = () => {
   const [torrents, setTorrents] = useState([]);
@@ -35,31 +35,39 @@ const TorrentClient = () => {
     
     const handleTorrentsUpdate = (data) => {
       if (mounted) {
-        setTorrents(data.torrents || []);
-        setStats(data.stats);
-      }
-    };
-    
-    const handleTorrentAdded = () => {
-      if (mounted) {
         loadTorrents();
+        // setTorrents(data.torrents || []);
+        // setStats(data.stats);
       }
     };
     
-    loadTorrents();
+    // const handleTorrentAdded = () => {
+    //   if (mounted) {
+    //     loadTorrents();
+    //   }
+    // };
+    const handleupdateWallet = () => {
+      if (mounted) {
+        GetWalletState();
+      }
+    };
+    
+    // loadTorrents();
     GetWalletState().then(wallet => {
       if (mounted) {
         setWalletInfo(wallet);
       }
     });
     
-    EventsOn('torrents-update', handleTorrentsUpdate);
-    EventsOn('torrent-added', handleTorrentAdded);
+    EventsOn('torrents-updated', handleTorrentsUpdate);
+    // EventsOn('torrent-added', handleTorrentAdded);
+    EventsOn('wallet-updated', handleupdateWallet);
   
     return () => {
       mounted = false;
       EventsOff('torrents-update', handleTorrentsUpdate);
-      EventsOff('torrent-added', handleTorrentAdded);
+      // EventsOff('torrent-added', handleTorrentAdded);
+      EventsOff('wallet-updated', handleupdateWallet);
     };
   }, []);
 
@@ -115,7 +123,7 @@ const TorrentClient = () => {
 const handleRefreshBalance = async () => {
     try {
       setLoading(true);
-      await Sync();
+      await WalletSync();
       setWalletInfo(await GetWalletState());
     } catch (err) {
       setError('Failed to refresh balance');

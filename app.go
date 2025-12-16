@@ -236,9 +236,9 @@ func (a *App) startup(ctx context.Context) {
 		var timer = time.Tick(5 * time.Second)
 
 		for range timer {
-			a.appStateLocker.RLock()
+			a.appStateLocker.Lock()
 			a.updateStatsLoop()
-			a.appStateLocker.RUnlock()
+			a.appStateLocker.Unlock()
 		}
 	}()
 }

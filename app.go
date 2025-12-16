@@ -368,8 +368,9 @@ func (a *App) CreateTorrentFromPath(path string) (*string, error) {
 
 	a.torrents[infoHash] = t
 
-	wailsruntime.EventsEmit(a.ctx, "torrent-added", infoHash)
 	a.saveTorrentsState()
+
+	wailsruntime.EventsEmit(a.ctx, "torrent-added", infoHash)
 
 	magnetLink, err := metaInfo.MagnetV2()
 	if err != nil {
@@ -580,14 +581,17 @@ func (a *App) saveTorrentsState() {
 			magnetURI = magnetLink.String()
 		}
 
-		states = append(states, TorrentState{
+		var state = TorrentState{
 			IsPaused:       a.pausedTorrents[hash],
 			SatoshisEarned: a.torrentsState[hash].SatoshisEarned,
 			SatoshisSpend:  a.torrentsState[hash].SatoshisSpend,
 			InfoHash:       hash,
 			MagnetURI:      magnetURI,
 			UpdatedAt:      time.Now(),
-		})
+		}
+
+		states = append(states, state)
+		a.torrentsState[hash] = &state
 	}
 
 	data, err := json.Marshal(&states)

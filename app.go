@@ -555,7 +555,7 @@ func (a *App) WalletSync() error {
 	a.walletLocker.Lock()
 	defer a.walletLocker.Unlock()
 
-	return a.wallet.Sync(false)
+	return a.wallet.Sync(true)
 }
 
 func (a *App) RequestFunds(amount uint64) error {

@@ -1,10 +1,7 @@
 package main
 
 import (
-	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/timechainlabs/torrent"
@@ -19,23 +16,6 @@ var builtinAnnounceList = [][]string{
 	{"http://p4p.arenabg.com:1337/announce"},
 	{"udp://tracker.opentrackr.org:1337/announce"},
 	{"udp://tracker.openbittorrent.com:6969/announce"},
-}
-
-func totalLength(path string) (int64, error) {
-	var totalLength int64
-	err := filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
-		if info.IsDir() {
-			return nil
-		}
-
-		totalLength += info.Size()
-		return nil
-	})
-	if err != nil {
-		return 0, fmt.Errorf("walking path, %w", err)
-	}
-
-	return totalLength, nil
 }
 
 func createAndSendExtendedMessageWithTransaction(userWallet *FullWallet, peerConnection *torrent.PeerConn,

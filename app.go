@@ -87,7 +87,7 @@ func (a *App) startup(ctx context.Context) {
 		}
 	}
 
-	err = a.wallet.Sync()
+	err = a.wallet.Sync(true)
 	if err != nil {
 		log.Default().Fatalf("Error: %s\n", err.Error())
 	}
@@ -170,6 +170,7 @@ func (a *App) startup(ctx context.Context) {
 
 							var totalSpentAmount uint64 = microTransaction.TotalOutputSatoshis() + (20 * uint64(len(microTransaction.Inputs))) + 10
 							if totalInputAmount < totalSpentAmount {
+								log.Default().Printf("Insufficient funds\n")
 								return
 							}
 
@@ -336,6 +337,19 @@ func (a *App) CreateTorrentFromPath(path string) (*string, error) {
 			PieceCompletion: pieceInformationStorage,
 		}),
 	})
+
+	err = t.MergeSpec(&torrent.TorrentSpec{
+		Trackers: [][]string{{
+			"wss://tracker.btorrent.xyz",
+			"wss://tracker.openwebtorrent.com",
+			"http://p4p.arenabg.com:1337/announce",
+			"udp://tracker.opentrackr.org:1337/announce",
+			"udp://tracker.openbittorrent.com:6969/announce",
+		}},
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	<-t.GotInfo()
 	t.AllowDataDownload()
@@ -541,7 +555,7 @@ func (a *App) WalletSync() error {
 	a.walletLocker.Lock()
 	defer a.walletLocker.Unlock()
 
-	return a.wallet.Sync()
+	return a.wallet.Sync(false)
 }
 
 func (a *App) RequestFunds(amount uint64) error {

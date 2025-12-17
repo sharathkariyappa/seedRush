@@ -102,8 +102,8 @@ func loadWallet(path string) (*FullWallet, error) {
 	}, nil
 }
 
-func (w *FullWallet) Sync() error {
-	if time.Since(w.LastSync) < time.Minute {
+func (w *FullWallet) Sync(eager bool) error {
+	if !eager && time.Since(w.LastSync) < time.Minute {
 		return nil
 	} else {
 		w.LastSync = time.Now()

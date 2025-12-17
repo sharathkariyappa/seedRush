@@ -124,7 +124,7 @@ func (a *App) startup(ctx context.Context) {
 									if t != nil {
 										state, found := a.torrentsState[t.InfoHash().String()]
 										if found {
-											state.SatoshisEarned += 10
+											state.SatoshisEarned += 100
 										}
 									}
 
@@ -207,7 +207,7 @@ func (a *App) startup(ctx context.Context) {
 							if t != nil {
 								state, found := a.torrentsState[t.InfoHash().String()]
 								if found {
-									state.SatoshisSpend += 10
+									state.SatoshisSpend += 100
 								}
 							}
 						}
@@ -219,7 +219,7 @@ func (a *App) startup(ctx context.Context) {
 			},
 		},
 		ApproveOrNotPieceRequest: func(p *torrent.PeerConn, r torrent.Request) bool {
-			return createAndSendExtendedMessageWithTransaction(a.wallet, p, r, 10)
+			return createAndSendExtendedMessageWithTransaction(a.wallet, p, r, 100)
 		},
 	}
 

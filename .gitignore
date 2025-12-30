@@ -22,3 +22,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+rpm-single-seedrush
+deb-single-seedrush

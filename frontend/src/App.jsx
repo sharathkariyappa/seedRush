@@ -167,6 +167,7 @@ const handleRefreshBalance = async () => {
     try {
       const preview = await withTimeout(GetMagnetInfo(magnetLink), 30000);
       setMagnetPreview(preview);
+      console.log(preview);
     } catch (err) {
       setError(err.message || 'Failed to fetch torrent info');
       setTimeout(() => setError(''), 3000);
@@ -873,7 +874,7 @@ const handleRefreshBalance = async () => {
                           {magnetPreview.name}
                         </h3>
                         <p className="text-xs text-gray-400">
-                          {magnetPreview.infoHash.substring(0, 40)}...
+                          {magnetPreview.infoHash}
                         </p>
                       </div>
                     </div>
@@ -881,24 +882,24 @@ const handleRefreshBalance = async () => {
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between items-center p-2 bg-[#081B2A]/50 rounded">
                         <span className="text-gray-400">Size</span>
-                        <span className="font-medium text-white">{magnetPreview.sizeStr}</span>
+                        <span className="font-medium text-white">{magnetPreview.size_str}</span>
                       </div>
                       <div className="flex justify-between items-center p-2 bg-[#081B2A]/50 rounded">
                         <span className="text-gray-400">Total Pieces</span>
-                        <span className="font-medium text-white">{magnetPreview.totalPieces.toLocaleString()}</span>
+                        <span className="font-medium text-white">{magnetPreview.total_pieces}</span>
                       </div>
                       <div className="flex justify-between items-center p-2 bg-[#06E7ED]/10 rounded border border-[#06E7ED]/20">
                         <span className="text-gray-400">Price per Piece</span>
-                        <span className="font-bold text-[#06E7ED]">{magnetPreview.pricePerPiece} SATS</span>
+                        <span className="font-bold text-[#06E7ED]">{magnetPreview.price_per_piece} SATS</span>
                       </div>
                       <div className="flex justify-between items-center p-3 bg-gradient-to-r from-[#06E7ED]/20 to-[#06E7ED]/10 rounded-lg border border-[#06E7ED]/30">
                         <span className="text-white font-semibold">Estimated Total Cost</span>
                         <div className="text-right">
                           <div className="font-bold text-[#06E7ED] text-lg">
-                            {magnetPreview.estimatedCost.toLocaleString()} SATS
+                            {magnetPreview.estimated_cost} SATS
                           </div>
                           <div className="text-xs text-gray-400">
-                            ≈ ${(magnetPreview.estimatedCost * 0.00001).toFixed(4)} USD
+                            ≈ ${(magnetPreview.estimated_cost * 0.00001).toFixed(4)} USD
                           </div>
                         </div>
                       </div>
@@ -1100,7 +1101,7 @@ const handleRefreshBalance = async () => {
                   <button
                     onClick={() => {
                       handleCloseLocalFilesModal();
-                      setPricePerPiece('100');
+                      // setPricePerPiece('100');
                     }}
                     className="flex-1 bg-[#06E7ED] hover:bg-[#05CDD3] text-[#081B2A] rounded-lg py-3 font-semibold transition-all"
                   >

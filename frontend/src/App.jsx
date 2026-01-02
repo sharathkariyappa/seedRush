@@ -4,6 +4,7 @@ import { AddMagnet, GetTorrents, GetStats, PauseTorrent, ResumeTorrent, RemoveTo
 import { EventsOff, EventsOn } from '../wailsjs/runtime/runtime';
 import { SelectSeedPath } from '../wailsjs/go/main/App';
 import { CreateTorrentFromPath, RequestFunds, WalletSync } from '../wailsjs/go/main/App';
+import { GetMagnetInfo } from '../wailsjs/go/main/App';
 
 const TorrentClient = () => {
   const [torrents, setTorrents] = useState([]);
@@ -29,6 +30,9 @@ const TorrentClient = () => {
   const [showSpentModal, setShowSpentsModal] = useState(false);
   const [walletInfo, setWalletInfo] = useState(null);
   const [amountToRequest, setAmountToRequest] = useState("");
+  const [magnetPreview, setMagnetPreview] = useState(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [pricePerPiece, setPricePerPiece] = useState('100');
 
   useEffect(() => {
     let mounted = true;
@@ -150,19 +154,35 @@ const handleRefreshBalance = async () => {
       setTimeout(() => setError(''), 3000);
       return;
     }
-
+  
     if (!magnetLink.startsWith('magnet:?')) {
       setError('Invalid magnet link format');
       setTimeout(() => setError(''), 3000);
       return;
     }
+  
+    setLoadingPreview(true);
+    setError('');
+  
+    try {
+      const preview = await withTimeout(GetMagnetInfo(magnetLink), 30000);
+      setMagnetPreview(preview);
+    } catch (err) {
+      setError(err.message || 'Failed to fetch torrent info');
+      setTimeout(() => setError(''), 3000);
+    } finally {
+      setLoadingPreview(false);
+    }
+  };
 
+  const handleConfirmDownload = async () => {
     setLoading(true);
     setError('');
-
+  
     try {
-      await AddMagnet(magnetLink);
+      await withTimeout(AddMagnet(magnetLink), 30000);
       setMagnetLink('');
+      setMagnetPreview(null);
       setShowAddModal(false);
     } catch (err) {
       setError(err.message || 'Failed to add torrent');
@@ -171,6 +191,7 @@ const handleRefreshBalance = async () => {
       setLoading(false);
     }
   };
+
 
   const handleSelectSeedPath = async () => {
     try {
@@ -187,11 +208,19 @@ const handleRefreshBalance = async () => {
   };
 
   const handleCreateTorrent = async () => {
+    const price = parseInt(pricePerPiece);
+    
+    if (!pricePerPiece || isNaN(price) || price <= 0) {
+      setError('Please enter a valid price greater than 0');
+      setTimeout(() => setError(''), 3000);
+      return;
+    }
+  
     setLoading(true);
     setError('');
-
+  
     try {
-      const magnetLink = await CreateTorrentFromPath(path);
+      const magnetLink = await withTimeout(CreateTorrentFromPath(path, price), 60000);
       setGeneratedMagnetLink(magnetLink);
       await loadTorrents();
     } catch (err) {
@@ -202,11 +231,11 @@ const handleRefreshBalance = async () => {
     }
   };
 
-  const handleCloseLocalFilesModal = () => {
-    setShowLocalFilesModal(false);
-    setGeneratedMagnetLink('');
-    setError('');
-  };
+  // const handleCloseLocalFilesModal = () => {
+  //   setShowLocalFilesModal(false);
+  //   setGeneratedMagnetLink('');
+  //   setError('');
+  // };
 
   const handleToggleStatus = async (torrent) => {
     try {
@@ -321,6 +350,32 @@ const handleRefreshBalance = async () => {
       default:
         return status;
     }
+  };
+
+  const handleCloseAddModal = () => {
+    setShowAddModal(false);
+    setError('');
+    setMagnetLink('');
+    setMagnetPreview(null);
+    setLoading(false);
+    setLoadingPreview(false);
+  };
+  
+  const handleCloseLocalFilesModal = () => {
+    setShowLocalFilesModal(false);
+    setGeneratedMagnetLink('');
+    setError('');
+    setLoading(false);
+    setPricePerPiece('100');
+  };
+
+  const withTimeout = (promise, timeoutMs = 30000) => {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Operation timed out')), timeoutMs)
+      )
+    ]);
   };
 
   return (
@@ -744,11 +799,7 @@ const handleRefreshBalance = async () => {
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold">Add Torrent</h2>
               <button
-                onClick={() => {
-                  setShowAddModal(false);
-                  setError('');
-                  setMagnetLink('');
-                }}
+                onClick={handleCloseAddModal}
                 className="p-2 hover:bg-white/10 rounded-lg transition-all"
               >
                 <X className="w-5 h-5" />
@@ -763,39 +814,136 @@ const handleRefreshBalance = async () => {
             )}
 
             <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-gray-300 mb-2 block">
-                  Magnet Link
-                </label>
-                <div className="relative">
-                  <Link className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="magnet:?xt=urn:btih:..."
-                    value={magnetLink}
-                    onChange={(e) => setMagnetLink(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && magnetLink.trim()) {
-                        handleAddMagnet();
-                      }
-                    }}
-                    className="w-full bg-[#0E1F2D] border border-white/5 rounded-lg pl-10 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#06E7ED] focus:border-transparent transition-all"
-                    disabled={loading}
-                  />
-                </div>
-                <p className="text-xs text-gray-500 mt-2">
-                  Press Enter to add
-                </p>
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={handleAddMagnet}
-                  disabled={loading || !magnetLink.trim()}
-                  className="flex-1 bg-[#06E7ED] hover:bg-[#05CDD3] text-[#081B2A] rounded-lg py-3 font-semibold transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? 'Adding...' : 'Add Magnet'}
-                </button>
-              </div>
+              {!magnetPreview ? (
+                <>
+                  <div>
+                    <label className="text-sm font-medium text-gray-300 mb-2 block">
+                      Magnet Link
+                    </label>
+                    <div className="relative">
+                      <Link className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="magnet:?xt=urn:btih:..."
+                        value={magnetLink}
+                        onChange={(e) => setMagnetLink(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && magnetLink.trim()) {
+                            handleAddMagnet();
+                          }
+                        }}
+                        className="w-full bg-[#0E1F2D] border border-white/5 rounded-lg pl-10 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#06E7ED] focus:border-transparent transition-all"
+                        disabled={loadingPreview}
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      Press Enter or click Preview to check torrent details
+                    </p>
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={handleAddMagnet}
+                      disabled={loadingPreview || !magnetLink.trim()}
+                      className="flex-1 bg-[#06E7ED] hover:bg-[#05CDD3] text-[#081B2A] rounded-lg py-3 font-semibold transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {loadingPreview ? (
+                        <>
+                          <div className="animate-spin rounded-full h-5 w-5 border-2 border-[#081B2A] border-t-transparent"></div>
+                          Loading Preview...
+                        </>
+                      ) : (
+                        <>
+                          <Search className="w-5 h-5" />
+                          Preview Torrent
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Torrent Preview */}
+                  <div className="bg-[#0E1F2D] border border-[#06E7ED]/20 rounded-lg p-4 space-y-3">
+                    <div className="flex items-start gap-3 mb-4">
+                      <div className="p-2 bg-[#06E7ED]/10 rounded-lg">
+                        <HardDrive className="w-6 h-6 text-[#06E7ED]" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-white mb-1 break-words">
+                          {magnetPreview.name}
+                        </h3>
+                        <p className="text-xs text-gray-400">
+                          {magnetPreview.infoHash.substring(0, 40)}...
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between items-center p-2 bg-[#081B2A]/50 rounded">
+                        <span className="text-gray-400">Size</span>
+                        <span className="font-medium text-white">{magnetPreview.sizeStr}</span>
+                      </div>
+                      <div className="flex justify-between items-center p-2 bg-[#081B2A]/50 rounded">
+                        <span className="text-gray-400">Total Pieces</span>
+                        <span className="font-medium text-white">{magnetPreview.totalPieces.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between items-center p-2 bg-[#06E7ED]/10 rounded border border-[#06E7ED]/20">
+                        <span className="text-gray-400">Price per Piece</span>
+                        <span className="font-bold text-[#06E7ED]">{magnetPreview.pricePerPiece} SATS</span>
+                      </div>
+                      <div className="flex justify-between items-center p-3 bg-gradient-to-r from-[#06E7ED]/20 to-[#06E7ED]/10 rounded-lg border border-[#06E7ED]/30">
+                        <span className="text-white font-semibold">Estimated Total Cost</span>
+                        <div className="text-right">
+                          <div className="font-bold text-[#06E7ED] text-lg">
+                            {magnetPreview.estimatedCost.toLocaleString()} SATS
+                          </div>
+                          <div className="text-xs text-gray-400">
+                            ≈ ${(magnetPreview.estimatedCost * 0.00001).toFixed(4)} USD
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                      <p className="text-xs text-yellow-300 flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                        <span>
+                          You will be charged per piece as you download. Make sure you have sufficient balance in your wallet.
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => {
+                        setMagnetPreview(null);
+                        setMagnetLink('');
+                      }}
+                      className="flex-1 bg-[#0E1F2D] hover:bg-white/5 border border-white/10 rounded-lg py-3 font-semibold transition-all"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleConfirmDownload}
+                      disabled={loading}
+                      className="flex-1 bg-[#06E7ED] hover:bg-[#05CDD3] text-[#081B2A] rounded-lg py-3 font-semibold transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {loading ? (
+                        <>
+                          <div className="animate-spin rounded-full h-5 w-5 border-2 border-[#081B2A] border-t-transparent"></div>
+                          Adding...
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-5 h-5" />
+                          Download
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -824,6 +972,52 @@ const handleRefreshBalance = async () => {
             )}
 
             <div className="space-y-4">
+              {!generatedMagnetLink && (
+                <div className="bg-[#0E1F2D] border border-white/5 rounded-lg p-4">
+                  <div className="flex items-start gap-3 mb-4">
+                    <div className="p-2 bg-[#06E7ED]/10 rounded-lg">
+                      <FolderOpen className="w-6 h-6 text-[#06E7ED]" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-white mb-1">Selected Path</h3>
+                      <p className="text-sm text-gray-400 break-all">{path}</p>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-white/5 pt-4">
+                    <label className="text-sm font-medium text-gray-300 mb-2 block">
+                      Set Price per Piece (in Satoshis)
+                    </label>
+                    <div className="relative">
+                      <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <input
+                        type="number"
+                        placeholder="100"
+                        value={pricePerPiece}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (value === '' || (Number(value) >= 0 && !isNaN(value))) {
+                            setPricePerPiece(value);
+                          }
+                        }}
+                        min="1"
+                        className="w-full bg-[#081B2A]/50 border border-white/5 rounded-lg pl-10 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#06E7ED] focus:border-transparent transition-all"
+                        disabled={loading}
+                      />
+                    </div>
+                    <div className="mt-2 flex items-start gap-2 text-xs text-gray-400">
+                      <AlertCircle className="w-4 h-4 flex-shrink-0 mt-1" />
+                      <div>
+                        <p className='mt-1'>Each piece is 64 KB. Set a fair price that downloaders will pay per piece.</p>
+                        {/* <p className="mt-1 text-[#06E7ED]">
+                          Recommended: 10-200 satoshis per piece
+                        </p> */}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {loading && (
                 <div className="bg-[#06E7ED]/10 border border-[#06E7ED]/20 rounded-lg p-4">
                   <div className="flex items-center gap-3 mb-3">
@@ -842,22 +1036,33 @@ const handleRefreshBalance = async () => {
                     <Check className="w-5 h-5 text-green-400" />
                     <span className="font-semibold text-green-300">Torrent Created Successfully!</span>
                   </div>
-                  <div className="space-y-2">
-                    <p className="text-sm text-gray-300">Your files are now being seeded. Share this magnet link:</p>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={generatedMagnetLink}
-                        readOnly
-                        className="flex-1 bg-[#0E1F2D] border border-white/5 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none"
-                      />
-                      <button
-                        onClick={() => copyToClipboard(generatedMagnetLink)}
-                        className="px-4 py-2 bg-[#06E7ED] hover:bg-[#05CDD3] text-[#081B2A] rounded-lg transition-all flex items-center gap-2 text-sm font-medium"
-                      >
-                        <Copy className="w-4 h-4" />
-                        Copy
-                      </button>
+                  <div className="space-y-3">
+                    <div className="bg-[#0E1F2D] rounded-lg p-3 border border-white/5">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm text-gray-400">Price per Piece</span>
+                        <span className="font-bold text-[#06E7ED]">{pricePerPiece} SATS</span>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        Downloaders will pay {pricePerPiece} satoshis for each 64 KB piece they download.
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-300 mb-2">Your files are now being seeded. Share this magnet link:</p>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={generatedMagnetLink}
+                          readOnly
+                          className="flex-1 bg-[#0E1F2D] border border-white/5 rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none"
+                        />
+                        <button
+                          onClick={() => copyToClipboard(generatedMagnetLink)}
+                          className="px-4 py-2 bg-[#06E7ED] hover:bg-[#05CDD3] text-[#081B2A] rounded-lg transition-all flex items-center gap-2 text-sm font-medium"
+                        >
+                          <Copy className="w-4 h-4" />
+                          Copy
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -868,7 +1073,7 @@ const handleRefreshBalance = async () => {
                   <>
                     <button
                       onClick={handleCreateTorrent}
-                      disabled={loading}
+                      disabled={loading || !pricePerPiece || parseInt(pricePerPiece) <= 0}
                       className="flex-1 bg-[#06E7ED] hover:bg-[#05CDD3] text-[#081B2A] rounded-lg py-3 font-semibold transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                       {loading ? (
@@ -893,7 +1098,10 @@ const handleRefreshBalance = async () => {
                   </>
                 ) : (
                   <button
-                    onClick={handleCloseLocalFilesModal}
+                    onClick={() => {
+                      handleCloseLocalFilesModal();
+                      setPricePerPiece('100');
+                    }}
                     className="flex-1 bg-[#06E7ED] hover:bg-[#05CDD3] text-[#081B2A] rounded-lg py-3 font-semibold transition-all"
                   >
                     Done

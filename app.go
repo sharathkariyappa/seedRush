@@ -24,6 +24,17 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
+type MagnetPreviewInfo struct {
+	Name             string `json:"name"`
+	InfoHash         string `json:"info_hash"`
+	Size             int64  `json:"size"`
+	SizeStr          string `json:"size_str"`
+	PricePerPiece    uint64 `json:"price_per_piece"`
+	TotalPieces      int    `json:"total_pieces"`
+	EstimatedCost    uint64 `json:"estimated_cost"`
+	EstimatedCostStr string `json:"estimated_cost_str"`
+}
+
 func NewApp() *App {
 	return &App{
 		broadcaster:    broadcaster.NewBroadcaster(),
@@ -109,7 +120,6 @@ func (a *App) startup(ctx context.Context) {
 					}
 
 					switch microPayRequest.Type {
-
 					case "SENT":
 						{
 							extensionError = a.broadcaster.Broadcast(microPayRequest.Txhex)
@@ -124,10 +134,10 @@ func (a *App) startup(ctx context.Context) {
 									if t != nil {
 										state, found := a.torrentsState[t.InfoHash().String()]
 										if found {
-											state.SatoshisEarned += 100
+											// Use price from state
+											state.SatoshisEarned += state.PricePerPiece
 										}
 									}
-
 									m.PeerConn.ReleaseRequest()
 								}
 							}
@@ -137,6 +147,20 @@ func (a *App) startup(ctx context.Context) {
 						{
 							a.walletLocker.Lock()
 							defer a.walletLocker.Unlock()
+
+							var t *torrent.Torrent = m.PeerConn.Torrent()
+							var pricePerPiece uint64 = 100
+
+							// Get price from torrent state
+							if t != nil {
+								a.appStateLocker.RLock()
+								state, found := a.torrentsState[t.InfoHash().String()]
+								a.appStateLocker.RUnlock()
+
+								if found && state.PricePerPiece > 0 {
+									pricePerPiece = state.PricePerPiece
+								}
+							}
 
 							var microTransaction *transaction.Transaction
 							microTransaction, extensionError = transaction.NewTransactionFromHex(microPayRequest.Txhex)
@@ -203,11 +227,13 @@ func (a *App) startup(ctx context.Context) {
 								return
 							}
 
-							var t *torrent.Torrent = m.PeerConn.Torrent()
 							if t != nil {
+								a.appStateLocker.RLock()
 								state, found := a.torrentsState[t.InfoHash().String()]
+								a.appStateLocker.RUnlock()
+
 								if found {
-									state.SatoshisSpend += 100
+									state.SatoshisSpend += pricePerPiece
 								}
 							}
 						}
@@ -219,7 +245,21 @@ func (a *App) startup(ctx context.Context) {
 			},
 		},
 		ApproveOrNotPieceRequest: func(p *torrent.PeerConn, r torrent.Request) bool {
-			return createAndSendExtendedMessageWithTransaction(a.wallet, p, r, 100)
+			// Get price from torrent state
+			var t *torrent.Torrent = p.Torrent()
+			var pricePerPiece uint64 = 100
+
+			if t != nil {
+				a.appStateLocker.RLock()
+				state, found := a.torrentsState[t.InfoHash().String()]
+				a.appStateLocker.RUnlock()
+
+				if found && state.PricePerPiece > 0 {
+					pricePerPiece = state.PricePerPiece
+				}
+			}
+
+			return createAndSendExtendedMessageWithTransaction(a.wallet, p, r, pricePerPiece)
 		},
 	}
 
@@ -273,10 +313,18 @@ func (a *App) AddMagnet(magnetURI string) error {
 
 		var infoHash string = t.InfoHash().String()
 
+		// Extract price from torrent metadata
+		pricePerPiece := extractPriceFromTorrent(t)
+
 		a.downloadSpeeds[infoHash] = &speedTracker{lastTime: time.Now()}
 		a.uploadSpeeds[infoHash] = &speedTracker{lastTime: time.Now()}
 
 		a.torrents[infoHash] = t
+
+		// Store price extracted from metadata
+		a.torrentsState[infoHash] = &TorrentFundState{
+			PricePerPiece: pricePerPiece,
+		}
 
 		a.saveTorrentsState()
 
@@ -291,7 +339,7 @@ func (a *App) AddMagnet(magnetURI string) error {
 	return nil
 }
 
-func (a *App) CreateTorrentFromPath(path string) (*string, error) {
+func (a *App) CreateTorrentFromPath(path string, pricePerPiece uint64) (*string, error) {
 	a.appStateLocker.Lock()
 	defer a.appStateLocker.Unlock()
 
@@ -302,9 +350,16 @@ func (a *App) CreateTorrentFromPath(path string) (*string, error) {
 		return nil, fmt.Errorf("torrent client not initialized")
 	}
 
+	// Validate price
+	if pricePerPiece == 0 {
+		return nil, fmt.Errorf("price per piece must be greater than 0")
+	}
+
 	var metaInfo metainfo.MetaInfo = metainfo.MetaInfo{
 		AnnounceList: builtinAnnounceList,
 		CreationDate: time.Now().Unix(),
+		// Add price to torrent metadata comment field
+		Comment: fmt.Sprintf("seedrush-price:%d", pricePerPiece),
 	}
 
 	var info = metainfo.Info{
@@ -363,6 +418,11 @@ func (a *App) CreateTorrentFromPath(path string) (*string, error) {
 	a.uploadSpeeds[infoHash] = &speedTracker{lastTime: time.Now()}
 
 	a.torrents[infoHash] = t
+
+	// Store price in state
+	a.torrentsState[infoHash] = &TorrentFundState{
+		PricePerPiece: pricePerPiece,
+	}
 
 	a.saveTorrentsState()
 
@@ -612,17 +672,21 @@ func (a *App) saveTorrentsState() {
 				IsPaused:       a.pausedTorrents[hash],
 				SatoshisEarned: existingState.SatoshisEarned,
 				SatoshisSpend:  existingState.SatoshisSpend,
+				PricePerPiece:  existingState.PricePerPiece, // NEW: Save price
 				InfoHash:       hash,
 				MagnetURI:      magnetURI,
 				UpdatedAt:      time.Now(),
 			})
 		} else {
-			a.torrentsState[hash] = new(TorrentFundState)
+			a.torrentsState[hash] = &TorrentFundState{
+				PricePerPiece: 100, // Default for legacy torrents
+			}
 			states = append(states, TorrentState{
-				IsPaused:  a.pausedTorrents[hash],
-				InfoHash:  hash,
-				MagnetURI: magnetURI,
-				UpdatedAt: time.Now(),
+				IsPaused:      a.pausedTorrents[hash],
+				PricePerPiece: 100, // NEW: Default price
+				InfoHash:      hash,
+				MagnetURI:     magnetURI,
+				UpdatedAt:     time.Now(),
 			})
 		}
 	}
@@ -666,20 +730,39 @@ func (a *App) loadSavedTorrents() {
 		a.uploadSpeeds[infoHash] = &speedTracker{lastTime: time.Now()}
 
 		a.torrents[infoHash] = t
+
+		// get price from state
+		pricePerPiece := states[i].PricePerPiece
+		if pricePerPiece == 0 {
+			pricePerPiece = 100
+		}
+
 		a.torrentsState[infoHash] = &TorrentFundState{
 			SatoshisEarned: states[i].SatoshisEarned,
 			SatoshisSpend:  states[i].SatoshisSpend,
+			PricePerPiece:  pricePerPiece,
 		}
 
 		if states[i].IsPaused {
 			a.pausedTorrents[infoHash] = true
 		} else {
-			go func() {
-				<-t.GotInfo()
-				t.AllowDataDownload()
-				t.AllowDataUpload()
-				t.Seeding()
-			}()
+			go func(torrent *torrent.Torrent, hash string) {
+				<-torrent.GotInfo()
+
+				// Extract price from metadata
+				actualPrice := extractPriceFromTorrent(torrent)
+				if actualPrice > 0 {
+					a.appStateLocker.Lock()
+					if state, found := a.torrentsState[hash]; found {
+						state.PricePerPiece = actualPrice
+					}
+					a.appStateLocker.Unlock()
+				}
+
+				torrent.AllowDataDownload()
+				torrent.AllowDataUpload()
+				torrent.Seeding()
+			}(t, infoHash)
 		}
 	}
 }
@@ -739,6 +822,7 @@ func (a *App) getTorrentInfo(hash string) (*SeedRushTorrentInfo, error) {
 		Size:           t.Length(),
 		SatoshisSpend:  a.torrentsState[hash].SatoshisSpend,
 		SatoshisEarned: a.torrentsState[hash].SatoshisEarned,
+		PricePerPiece:  a.torrentsState[hash].PricePerPiece,
 		Progress:       progress,
 		ID:             hash,
 		Name:           t.Name(),
@@ -865,4 +949,71 @@ func formatDuration(d time.Duration) string {
 	}
 
 	return fmt.Sprintf("%dh %dm", int(d.Hours()), (int(d.Minutes()) % 60))
+}
+
+func extractPriceFromTorrent(t *torrent.Torrent) uint64 {
+	if t == nil || t.Info() == nil {
+		return 0
+	}
+
+	metaInfo := t.Metainfo()
+
+	// seedrush-price:100
+	if len(metaInfo.Comment) > 0 {
+		var price uint64
+		_, err := fmt.Sscanf(metaInfo.Comment, "seedrush-price:%d", &price)
+		if err == nil && price > 0 {
+			return price
+		}
+	}
+
+	return 100
+}
+
+func (a *App) GetMagnetInfo(magnetURI string) (*MagnetPreviewInfo, error) {
+	if a.client == nil {
+		return nil, fmt.Errorf("torrent client not initialized")
+	}
+
+	// get metadata
+	t, err := a.client.AddMagnet(magnetURI)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add magnet: %w", err)
+	}
+
+	t.DisallowDataDownload()
+	t.DisallowDataUpload()
+
+	// Wait for metadata
+	select {
+	case <-t.GotInfo():
+		// Got metadata
+		pricePerPiece := extractPriceFromTorrent(t)
+
+		var totalPieces int = 0
+		if t.Info() != nil {
+			totalPieces = t.Info().NumPieces()
+		}
+
+		estimatedCost := uint64(totalPieces) * pricePerPiece
+
+		info := &MagnetPreviewInfo{
+			Name:             t.Name(),
+			InfoHash:         t.InfoHash().String(),
+			Size:             t.Length(),
+			SizeStr:          formatBytes(t.Length()),
+			PricePerPiece:    pricePerPiece,
+			TotalPieces:      totalPieces,
+			EstimatedCost:    estimatedCost,
+			EstimatedCostStr: fmt.Sprintf("%d satoshis", estimatedCost),
+		}
+
+		t.Drop()
+
+		return info, nil
+
+	case <-time.After(30 * time.Second):
+		t.Drop()
+		return nil, fmt.Errorf("timeout waiting for torrent metadata")
+	}
 }

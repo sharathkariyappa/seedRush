@@ -4,7 +4,9 @@ import {main} from '../models';
 
 export function AddMagnet(arg1:string):Promise<void>;
 
-export function CreateTorrentFromPath(arg1:string):Promise<any>;
+export function CreateTorrentFromPath(arg1:string,arg2:number):Promise<any>;
+
+export function GetMagnetInfo(arg1:string):Promise<main.MagnetPreviewInfo>;
 
 export function GetStats():Promise<main.Stats>;
 

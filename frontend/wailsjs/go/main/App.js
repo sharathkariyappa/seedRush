@@ -6,8 +6,12 @@ export function AddMagnet(arg1) {
   return window['go']['main']['App']['AddMagnet'](arg1);
 }
 
-export function CreateTorrentFromPath(arg1) {
-  return window['go']['main']['App']['CreateTorrentFromPath'](arg1);
+export function CreateTorrentFromPath(arg1, arg2) {
+  return window['go']['main']['App']['CreateTorrentFromPath'](arg1, arg2);
+}
+
+export function GetMagnetInfo(arg1) {
+  return window['go']['main']['App']['GetMagnetInfo'](arg1);
 }
 
 export function GetStats() {

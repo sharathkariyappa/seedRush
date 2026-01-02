@@ -40,6 +40,7 @@ type SeedRushTorrentInfo struct {
 	ETA            string             `json:"eta"`
 	UpdatedAt      time.Time          `json:"addedAt"`
 	Files          []SeedRushFileInfo `json:"files"`
+	PricePerPiece  uint64             `json:"price_per_piece"`
 }
 
 type SeedRushFileInfo struct {
@@ -64,11 +65,13 @@ type TorrentState struct {
 	InfoHash       string    `json:"infoHash"`
 	MagnetURI      string    `json:"magnetUri,omitempty"`
 	UpdatedAt      time.Time `json:"updatedAt"`
+	PricePerPiece  uint64    `json:"price_per_piece"`
 }
 
 type TorrentFundState struct {
 	SatoshisSpend  uint64
 	SatoshisEarned uint64
+	PricePerPiece  uint64 `json:"price_per_piece"`
 }
 
 type App struct {

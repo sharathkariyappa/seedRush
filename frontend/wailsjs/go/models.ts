@@ -1,5 +1,31 @@
 export namespace main {
 	
+	export class MagnetPreviewInfo {
+	    name: string;
+	    info_hash: string;
+	    size: number;
+	    size_str: string;
+	    price_per_piece: number;
+	    total_pieces: number;
+	    estimated_cost: number;
+	    estimated_cost_str: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new MagnetPreviewInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.info_hash = source["info_hash"];
+	        this.size = source["size"];
+	        this.size_str = source["size_str"];
+	        this.price_per_piece = source["price_per_piece"];
+	        this.total_pieces = source["total_pieces"];
+	        this.estimated_cost = source["estimated_cost"];
+	        this.estimated_cost_str = source["estimated_cost_str"];
+	    }
+	}
 	export class SeedRushFileInfo {
 	    size: number;
 	    progress: number;
@@ -41,6 +67,7 @@ export namespace main {
 	    // Go type: time
 	    addedAt: any;
 	    files: SeedRushFileInfo[];
+	    price_per_piece: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new SeedRushTorrentInfo(source);
@@ -67,6 +94,7 @@ export namespace main {
 	        this.eta = source["eta"];
 	        this.addedAt = this.convertValues(source["addedAt"], null);
 	        this.files = this.convertValues(source["files"], SeedRushFileInfo);
+	        this.price_per_piece = source["price_per_piece"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

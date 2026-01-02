@@ -32,7 +32,7 @@ const TorrentClient = () => {
   const [amountToRequest, setAmountToRequest] = useState("");
   const [magnetPreview, setMagnetPreview] = useState(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
-  const [pricePerPiece, setPricePerPiece] = useState('100');
+  const [pricePerPiece, setPricePerPiece] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -367,7 +367,7 @@ const handleRefreshBalance = async () => {
     setGeneratedMagnetLink('');
     setError('');
     setLoading(false);
-    setPricePerPiece('100');
+    setPricePerPiece('');
   };
 
   const withTimeout = (promise, timeoutMs = 30000) => {

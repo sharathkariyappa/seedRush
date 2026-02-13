@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"seedrush/broadcaster"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/bsv-blockchain/go-sdk/transaction"
@@ -314,7 +316,7 @@ func (a *App) AddMagnet(magnetURI string) error {
 		var infoHash string = t.InfoHash().String()
 
 		// Extract price from torrent metadata
-		pricePerPiece := extractPriceFromTorrent(t)
+		pricePerPiece := extractPriceFromMagnetURI(magnetURI)
 
 		a.downloadSpeeds[infoHash] = &speedTracker{lastTime: time.Now()}
 		a.uploadSpeeds[infoHash] = &speedTracker{lastTime: time.Now()}
@@ -433,9 +435,26 @@ func (a *App) CreateTorrentFromPath(path string, pricePerPiece uint64) (*string,
 		return nil, err
 	}
 
-	var magnetUrl string = magnetLink.String()
+	magnetUrl := fmt.Sprintf("%s&x.seedrush.price=%d", magnetLink.String(), pricePerPiece)
 
 	return &magnetUrl, nil
+}
+
+func extractPriceFromMagnetURI(magnetURI string) uint64 {
+	if strings.Contains(magnetURI, "x.seedrush.price=") {
+		parts := strings.Split(magnetURI, "x.seedrush.price=")
+		if len(parts) > 1 {
+			priceStr := strings.Split(parts[1], "&")[0]
+			price, err := strconv.ParseUint(priceStr, 10, 64)
+			if err == nil && price > 0 {
+				log.Default().Printf("✅ Extracted price from magnet: %d", price)
+				return price
+			}
+		}
+	}
+
+	log.Default().Println("⚠️ No price in magnet URI, using default 100")
+	return 100
 }
 
 func (a *App) GetTorrents() ([]*SeedRushTorrentInfo, error) {
@@ -719,6 +738,8 @@ func (a *App) loadSavedTorrents() {
 	}
 
 	for i := range states {
+		priceFromMagnet := extractPriceFromMagnetURI(states[i].MagnetURI)
+
 		t, err := a.client.AddMagnet(states[i].MagnetURI)
 		if err != nil {
 			continue
@@ -731,8 +752,10 @@ func (a *App) loadSavedTorrents() {
 
 		a.torrents[infoHash] = t
 
-		// get price from state
 		pricePerPiece := states[i].PricePerPiece
+		if pricePerPiece == 0 {
+			pricePerPiece = priceFromMagnet
+		}
 		if pricePerPiece == 0 {
 			pricePerPiece = 100
 		}
@@ -746,15 +769,17 @@ func (a *App) loadSavedTorrents() {
 		if states[i].IsPaused {
 			a.pausedTorrents[infoHash] = true
 		} else {
-			go func(torrent *torrent.Torrent, hash string) {
+			go func(torrent *torrent.Torrent, hash string, savedPrice uint64) {
 				<-torrent.GotInfo()
 
-				// Extract price from metadata
+				time.Sleep(200 * time.Millisecond)
+
 				actualPrice := extractPriceFromTorrent(torrent)
-				if actualPrice > 0 {
+				if actualPrice > 0 && actualPrice != 100 {
 					a.appStateLocker.Lock()
 					if state, found := a.torrentsState[hash]; found {
 						state.PricePerPiece = actualPrice
+						log.Default().Printf("✅ Updated price from metadata: %d", actualPrice)
 					}
 					a.appStateLocker.Unlock()
 				}
@@ -762,7 +787,7 @@ func (a *App) loadSavedTorrents() {
 				torrent.AllowDataDownload()
 				torrent.AllowDataUpload()
 				torrent.Seeding()
-			}(t, infoHash)
+			}(t, infoHash, pricePerPiece)
 		}
 	}
 }
@@ -974,8 +999,8 @@ func (a *App) GetMagnetInfo(magnetURI string) (*MagnetPreviewInfo, error) {
 	if a.client == nil {
 		return nil, fmt.Errorf("torrent client not initialized")
 	}
+	pricePerPiece := extractPriceFromMagnetURI(magnetURI)
 
-	// get metadata
 	t, err := a.client.AddMagnet(magnetURI)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add magnet: %w", err)
@@ -984,11 +1009,17 @@ func (a *App) GetMagnetInfo(magnetURI string) (*MagnetPreviewInfo, error) {
 	t.DisallowDataDownload()
 	t.DisallowDataUpload()
 
-	// Wait for metadata
 	select {
 	case <-t.GotInfo():
-		// Got metadata
-		pricePerPiece := extractPriceFromTorrent(t)
+		time.Sleep(200 * time.Millisecond)
+
+		metadataPrice := extractPriceFromTorrent(t)
+		if metadataPrice > 0 && metadataPrice != 100 {
+			pricePerPiece = metadataPrice
+			log.Default().Printf("✅ Using metadata price: %d", pricePerPiece)
+		} else {
+			log.Default().Printf("ℹ️ Using magnet URI price: %d", pricePerPiece)
+		}
 
 		var totalPieces int = 0
 		if t.Info() != nil {
